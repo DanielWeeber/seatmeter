@@ -1,6 +1,8 @@
 // Hilfen für API-Tests: Konfiguration, Mandanten, Personen, Projekte und Sitzungen direkt in der DB.
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Rolle } from '@seatmeter/shared';
+import type { FastifyInstance } from 'fastify';
+import { erstelleApp } from '../src/app.js';
 import { ladeKonfiguration, type Konfiguration } from '../src/config.js';
 import type { Db } from '../src/db/db.js';
 import { sha256, zufallsToken } from '../src/krypto.js';
@@ -13,6 +15,24 @@ export function testKonfiguration(url: string, extra: Record<string, string> = {
     SEATMETER_MASTER_KEY: MASTER_KEY_B64,
     LOG_LEVEL: 'silent',
     ...extra,
+  });
+}
+
+/**
+ * App nur mit den Kern-Modulen (ohne Plugin, ohne Lizenz), öffentliche URL `http://seatmeter.test`;
+ * `extra` ergänzt die Umgebung (z. B. `SEATMETER_ANALYTICS_URL`).
+ */
+export function kernApp(
+  db: Db,
+  url: string,
+  extra: Record<string, string> = {},
+): Promise<FastifyInstance> {
+  return erstelleApp({
+    konfiguration: testKonfiguration(url, {
+      SEATMETER_PUBLIC_URL: 'http://seatmeter.test',
+      ...extra,
+    }),
+    db,
   });
 }
 

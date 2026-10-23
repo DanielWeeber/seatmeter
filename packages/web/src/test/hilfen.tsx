@@ -6,23 +6,14 @@ import { App } from '../App';
 import type { WebPlugin } from '../plugins';
 import { fixtureFetch, json, ME_ADMIN, type Routen } from './fixtures';
 
-export function rendereApp(
-  pfad: string,
-  routen: Routen,
-  optionen: { mitEe?: boolean; plugins?: WebPlugin[] } = {},
-) {
+export function rendereApp(pfad: string, routen: Routen, optionen: { plugins?: WebPlugin[] } = {}) {
   const { fetch, aufrufe } = fixtureFetch({ '/api/v1/auth/me': json(ME_ADMIN), ...routen });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const ergebnis = render(
     <MemoryRouter initialEntries={[pfad]}>
-      <App
-        queryClient={queryClient}
-        mitEe={optionen.mitEe ?? false}
-        plugins={optionen.plugins ?? []}
-        fetch={fetch}
-      />
+      <App queryClient={queryClient} plugins={optionen.plugins ?? []} fetch={fetch} />
     </MemoryRouter>,
   );
   return { ...ergebnis, aufrufe, queryClient };

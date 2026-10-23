@@ -1,4 +1,4 @@
-// API-Vertrag des Abgleichs (ee, Architektur §2.6): Enterprise Analytics API und Team-Spend-CSV.
+// API-Vertrag des Abgleichs (Kern seit 2026-10-24, vorher ee; Architektur §2.6): Enterprise Analytics API und Team-Spend-CSV.
 // Zusammenfassungen enthalten nie Personendaten (nur Zähler und Tagessummen).
 import { z } from 'zod';
 

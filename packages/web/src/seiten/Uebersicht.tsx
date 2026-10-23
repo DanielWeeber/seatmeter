@@ -14,6 +14,7 @@ import {
 import { ausCent, prozent, usdAusMikro, zahl } from '../format';
 import { useMonat } from '../monat';
 import { useUebersichtKacheln } from '../plugins';
+import { PrognoseKachel } from './budgets/PrognoseKachel';
 import { kursText } from '../texte';
 
 export const MODELL_SPALTEN: Spalte<ModellZeile>[] = [
@@ -73,6 +74,7 @@ export function Uebersicht() {
                 hinweis="zu API-Listenpreisen"
               />
               <ProjektpreisKachel monat={monat} />
+              <PrognoseKachel monat={monat} />
               {kacheln.map((PluginKachel, i) => (
                 <PluginKachel key={i} monat={monat} />
               ))}

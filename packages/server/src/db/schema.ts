@@ -395,6 +395,47 @@ export interface AlarmTabelle {
   quittiert_von: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
+type ZeitNull = ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+type TextNull = ColumnType<string | null, string | null | undefined, string | null>;
+
+/** Alarmkanal je Mandant (Migration 0022, bis 2026-10-24 ee-Migration 0002); Geheimnis nur verschlüsselt. */
+export interface AlarmKanalTabelle {
+  id: Id;
+  mandant_id: string;
+  typ: 'webhook' | 'smtp' | 'weeberwrk-relay';
+  bezeichnung: string;
+  aktiv: Generated<boolean>;
+  konfig: ColumnType<unknown, string | undefined, string>;
+  geheimnis: ColumnType<Buffer | null, Buffer | null | undefined, Buffer | null>;
+  erstellt: ZeitDefault;
+  geaendert: ZeitDefault;
+}
+
+/** Projekt-Hinweis je Monat (Migration 0022); `projekt_id` `null` = mandantenweit. */
+export interface HinweisTabelle {
+  id: Id;
+  mandant_id: string;
+  monat: Tag;
+  projekt_id: string | null;
+  typ: string;
+  text: string;
+  wert: ColumnType<string | null, string | number | null | undefined, string | number | null>;
+  erstellt: ZeitDefault;
+  aktualisiert: ZeitDefault;
+  erledigt: ZeitNull;
+  erledigt_von: TextNull;
+}
+
+/**
+ * Hinweis-Schwellen je Mandant (Migration 0022). Der Tabellenname stammt aus der Zeit als ee-Modul und
+ * bleibt, damit vorhandene Installationen nichts umbenennen müssen.
+ */
+export interface EeEinstellungTabelle {
+  mandant_id: string;
+  hinweise: ColumnType<unknown, string | undefined, string>;
+  geaendert: ZeitDefault;
+}
+
 export interface BenutzerTabelle {
   id: Id;
   benutzername: string;
@@ -517,6 +558,9 @@ export interface Datenbank {
   abgleich_lauf: AbgleichLaufTabelle;
   budget: BudgetTabelle;
   alarm: AlarmTabelle;
+  alarm_kanal: AlarmKanalTabelle;
+  hinweis: HinweisTabelle;
+  ee_einstellung: EeEinstellungTabelle;
   benutzer: BenutzerTabelle;
   rolle: RolleTabelle;
   audit: AuditTabelle;

@@ -7,10 +7,13 @@ import { AuthTor } from './auth/AuthTor';
 import { Layout, PlattformLayout } from './Layout';
 import { navigation, UMLEITUNGEN } from './navigation';
 import { mitPluginNavigation, PluginProvider, pluginSeiten, type WebPlugin } from './plugins';
+import { Abgleich } from './seiten/abgleich/Abgleich';
 import { Ausrollen } from './seiten/Ausrollen';
 import { Berichte } from './seiten/Berichte';
+import { Budgets } from './seiten/budgets/Budgets';
 import { Datenqualitaet } from './seiten/Datenqualitaet';
 import { Einstellungen } from './seiten/Einstellungen';
+import { Hinweise } from './seiten/hinweise/Hinweise';
 import { Personen } from './seiten/Personen';
 import { Platzhalter } from './seiten/Platzhalter';
 import { Preise } from './seiten/Preise';
@@ -33,6 +36,9 @@ const SEITEN: Record<string, ReactElement> = {
   '/datenqualitaet': <Datenqualitaet />,
   '/berichte': <Berichte />,
   '/einstellungen': <Einstellungen />,
+  '/budgets': <Budgets />,
+  '/hinweise': <Hinweise />,
+  '/abgleich': <Abgleich />,
 };
 
 /** Leitet einen alten Pfad um; `:name` kommt aus dem alten Pfad, Suchparameter bleiben. */
@@ -47,18 +53,16 @@ function Umleitung({ nach }: { nach: string }) {
 
 export function App({
   queryClient,
-  mitEe,
   plugins = [],
   fetch,
 }: {
   queryClient: QueryClient;
-  mitEe: boolean;
   /** Web-Plugins (ee) aus `virtual:seatmeter-web-plugins`; im Kern leer. */
   plugins?: readonly WebPlugin[];
   /** Nur für Tests: ersetzt `fetch` für alle API-Aufrufe. */
   fetch?: FetchFunktion;
 }) {
-  const eintraege = mitPluginNavigation(navigation(mitEe), plugins);
+  const eintraege = mitPluginNavigation(navigation(), plugins);
   const dashboard = eintraege.filter((e) => e.gruppe !== 'plattform');
   const plattform = eintraege.filter((e) => e.gruppe === 'plattform');
   const zusatz = pluginSeiten(plugins);

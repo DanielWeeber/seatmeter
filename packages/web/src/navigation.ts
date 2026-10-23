@@ -1,7 +1,7 @@
 // Navigation laut Architektur §2.4, nach Rollen gruppiert (Entscheidung 2026-10-23):
 // Auswertung für alle Rollen, Einrichtung nur für Mandanten-Admins (und Plattform-Admins), Plattform
-// nur für Plattform-Admins im eigenen Bereich `/plattform`. ee-Einträge erscheinen nur mit Feature-Flag
-// VITE_SEATMETER_EE=1 (Bauen der ee-Seiten); wer sie sieht, entscheidet die Rolle aus `/me`.
+// nur für Plattform-Admins im eigenen Bereich `/plattform`. Den Plattform-Bereich bringt das ee-Plugin mit
+// (Mandantenfähigkeit); alles andere ist seit 2026-10-24 Kern (Entscheidung vom 2026-10-23).
 import type { AuthMe, NavEintrag, NavGruppe, Rolle } from '@seatmeter/shared';
 
 export const KERN_NAVIGATION: NavEintrag[] = [
@@ -15,13 +15,9 @@ export const KERN_NAVIGATION: NavEintrag[] = [
   { pfad: '/einstellungen', titel: 'Einstellungen', gruppe: 'einrichtung' },
   { pfad: '/preise', titel: 'Preise & Sitzkosten', gruppe: 'einrichtung' },
   { pfad: '/ausrollen', titel: 'Ausrollen', gruppe: 'einrichtung' },
-];
-
-/** ee-Einträge im Kern (ohne geladenes Plugin Platzhalter); Plattform-Seiten bringt das Plugin mit. */
-export const EE_NAVIGATION: NavEintrag[] = [
-  { pfad: '/budgets', titel: 'Budgets und Alarme', gruppe: 'einrichtung', ee: true },
-  { pfad: '/hinweise', titel: 'Projekt-Hinweise', gruppe: 'einrichtung', ee: true },
-  { pfad: '/abgleich', titel: 'Abgleich', gruppe: 'einrichtung', ee: true },
+  { pfad: '/budgets', titel: 'Budgets und Alarme', gruppe: 'einrichtung' },
+  { pfad: '/hinweise', titel: 'Projekt-Hinweise', gruppe: 'einrichtung' },
+  { pfad: '/abgleich', titel: 'Abgleich', gruppe: 'einrichtung' },
 ];
 
 /**
@@ -77,10 +73,7 @@ export function rollenText(rollen: readonly Rolle[]): string {
   return rollen.map((r) => ROLLEN_TEXT[r] ?? r).join(', ');
 }
 
-export function eeAktiv(env: Record<string, unknown> = import.meta.env): boolean {
-  return env.VITE_SEATMETER_EE === '1';
-}
-
-export function navigation(mitEe: boolean): NavEintrag[] {
-  return mitEe ? [...KERN_NAVIGATION, ...EE_NAVIGATION] : KERN_NAVIGATION;
+/** Navigation des Kerns; Plugin-Einträge (ee: Plattform-Bereich) ergänzt `mitPluginNavigation`. */
+export function navigation(): NavEintrag[] {
+  return KERN_NAVIGATION;
 }

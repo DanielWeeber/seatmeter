@@ -140,6 +140,8 @@ export const konfigurationSchema = z.object({
   SEATMETER_RATE_ENROLL: grenze('10/10'),
   /** Je Client-IP: falsche, abgelaufene oder genutzte Einmalcodes (Brute-Force-Schutz). */
   SEATMETER_RATE_ENROLL_FEHLVERSUCHE: grenze('1/5'),
+  /** Abgleich: Basis-URL der Analytics API (Standard api.anthropic.com; nur für Tests oder einen Proxy). */
+  SEATMETER_ANALYTICS_URL: optional(z.url()),
 });
 
 export type Konfiguration = z.output<typeof konfigurationSchema>;

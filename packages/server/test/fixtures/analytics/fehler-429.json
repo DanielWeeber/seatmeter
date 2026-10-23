@@ -1,0 +1,8 @@
+{
+  "type": "error",
+  "error": {
+    "type": "rate_limit_error",
+    "message": "Rate limit exceeded. Retry after the number of seconds given in the retry-after header."
+  },
+  "request_id": "req_011CExampleExampleExample02"
+}

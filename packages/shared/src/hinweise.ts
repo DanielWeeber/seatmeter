@@ -1,4 +1,4 @@
-// API-Vertrag der Projekt-Hinweise (ee, Festlegung 2026-10-22: Projekt-Hinweise ee, Datenqualität frei).
+// API-Vertrag der Projekt-Hinweise (Kern seit 2026-10-24, Entscheidung vom 2026-10-23; vorher ee).
 import { z } from 'zod';
 import { monatSchema } from './dashboard.js';
 

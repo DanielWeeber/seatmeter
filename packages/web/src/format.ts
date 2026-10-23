@@ -120,4 +120,35 @@ export function alsEingabe(wert: number): string {
   return String(wert).replace('.', ',');
 }
 
+const WAEHRUNGEN = new Set(['EUR', 'USD']);
+
+/** Menge in Budget-Einheit: Geldbetrag bei EUR/USD (`kurz`: ohne Cent bei runden Beträgen), sonst Tokens. */
+export function mengeText(wert: number | null | undefined, einheit: string, kurz = false): string {
+  if (wert == null) return LEER;
+  if (WAEHRUNGEN.has(einheit)) {
+    if (!kurz || !Number.isInteger(wert)) return geld(wert, einheit);
+    return new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: einheit,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(wert);
+  }
+  return `${zahl(Math.round(wert))} ${einheit.toLowerCase() === 'tokens' ? 'Tokens' : einheit}`;
+}
+
+/** Zahl aus einer Eingabe mit deutschem Komma (`1.200,50`) oder Punkt (`1200.5`); ungültig → NaN. */
+export function betragAus(text: string, ganzzahlig = false): number {
+  let t = text.trim().replace(/\s/g, '');
+  if (t === '') return Number.NaN;
+  // Tokens: Punkte sind Tausendertrenner. Geld: mit Komma sind Punkte Tausendertrenner.
+  if (ganzzahlig || t.includes(',')) t = t.replace(/\./g, '');
+  return Number(t.replace(',', '.'));
+}
+
+/** Liste aus einer Eingabe, getrennt durch Komma, Semikolon oder Leerraum. */
+export function listeAus(text: string): string[] {
+  return text.split(/[\s,;]+/).filter((t) => t !== '');
+}
+
 export { LEER };

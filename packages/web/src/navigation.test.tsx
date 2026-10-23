@@ -79,7 +79,7 @@ describe('Sichtbarkeit je Rolle (rein)', () => {
 
 describe('Seitenleiste nach Rollen', () => {
   it('Controller sieht nur die Auswertung', async () => {
-    rendereApp('/system', { '/api/v1/auth/me': json(ME_LESER) }, { mitEe: true });
+    rendereApp('/system', { '/api/v1/auth/me': json(ME_LESER) });
     const nav = await hauptnavigation();
     const auswertung = within(nav).getByRole('list', { name: 'Auswertung' });
     for (const titel of AUSWERTUNG)
@@ -98,7 +98,7 @@ describe('Seitenleiste nach Rollen', () => {
   });
 
   it('Mandanten-Admin sieht die Einrichtung, aber keinen Plattform-Bereich', async () => {
-    rendereApp('/system', {}, { mitEe: true, plugins: [plattformPlugin] });
+    rendereApp('/system', {}, { plugins: [plattformPlugin] });
     const nav = await hauptnavigation();
     const einrichtung = within(nav).getByRole('list', { name: 'Einrichtung' });
     for (const titel of [...EINRICHTUNG, 'Budgets und Alarme', 'Projekt-Hinweise', 'Abgleich'])

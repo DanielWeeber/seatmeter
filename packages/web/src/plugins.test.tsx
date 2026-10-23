@@ -9,12 +9,12 @@ import { rendereApp } from './test/hilfen';
 const beispiel: WebPlugin = {
   name: 'beispiel',
   navigation: [
-    { pfad: '/budgets', titel: 'Budgets (Plugin)', gruppe: 'einrichtung', ee: true },
+    { pfad: '/sonder', titel: 'Sonder (Plugin)', gruppe: 'einrichtung', ee: true },
     { pfad: '/extra', titel: 'Extra', gruppe: 'auswertung', ee: true },
     { pfad: '/plattform/extra', titel: 'Plattform-Extra', gruppe: 'plattform', ee: true },
   ],
   seiten: {
-    '/budgets': () => <h1>Budgets aus dem Plugin</h1>,
+    '/sonder': () => <h1>Sonderseite aus dem Plugin</h1>,
     '/extra/:id': () => <h1>Extra-Detail</h1>,
     '/plattform/extra': () => <h1>Plattform-Seite aus dem Plugin</h1>,
   },
@@ -24,24 +24,24 @@ const beispiel: WebPlugin = {
 describe('Web-Plugins', () => {
   it('ersetzt gleiche Pfade in der Navigation und hängt neue an', () => {
     const nav = mitPluginNavigation(
-      [{ pfad: '/budgets', titel: 'Budgets', gruppe: 'einrichtung', ee: true }],
+      [{ pfad: '/sonder', titel: 'Sonder', gruppe: 'einrichtung', ee: true }],
       [beispiel],
     );
-    expect(nav.map((e) => e.titel)).toEqual(['Budgets (Plugin)', 'Extra', 'Plattform-Extra']);
+    expect(nav.map((e) => e.titel)).toEqual(['Sonder (Plugin)', 'Extra', 'Plattform-Extra']);
     expect(nav.map((e) => e.gruppe)).toEqual(['einrichtung', 'auswertung', 'plattform']);
     expect(Object.keys(pluginSeiten([beispiel]))).toEqual([
-      '/budgets',
+      '/sonder',
       '/extra/:id',
       '/plattform/extra',
     ]);
   });
 
   it('zeigt Plugin-Seiten statt Platzhaltern und Seiten ohne Navigationseintrag', async () => {
-    rendereApp('/budgets', {}, { mitEe: true, plugins: [beispiel] });
-    expect(await screen.findByRole('heading', { name: 'Budgets aus dem Plugin' })).toBeTruthy();
+    rendereApp('/sonder', {}, { plugins: [beispiel] });
+    expect(await screen.findByRole('heading', { name: 'Sonderseite aus dem Plugin' })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Hauptnavigation' });
     expect(within(nav).getByRole('link', { name: 'Extra' })).toBeTruthy();
-    expect(within(nav).queryByRole('link', { name: 'Budgets und Alarme' })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Sonder (Plugin)' })).toBeTruthy();
     // Plattform-Einträge stehen nie in der Seitenleiste.
     expect(within(nav).queryByRole('link', { name: 'Plattform-Extra' })).toBeNull();
   });

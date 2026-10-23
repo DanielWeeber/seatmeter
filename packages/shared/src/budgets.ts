@@ -1,6 +1,5 @@
-// API-Vertrag der ee-Module Budgets, Alarme und Alarmkanäle (Architektur §5 „Budget (ee)“).
-// Die Schemas liegen im Kern-Paket shared, damit ee/server und ee/web denselben Vertrag nutzen;
-// die Umsetzung bleibt in ee/ (weeberwrk-Lizenz).
+// API-Vertrag der Module Budgets, Alarme und Alarmkanäle (Architektur §5 „Budget“); Server-Modul
+// packages/server/src/budgets, Seiten packages/web/src/seiten/budgets (bis 2026-10-24 ee).
 import { z } from 'zod';
 import { monatSchema } from './dashboard.js';
 
@@ -15,7 +14,7 @@ const schwellenSchema = z
   .max(10)
   .transform((s) => [...new Set(s)].sort((a, b) => a - b));
 
-/** Eingabe für POST/PUT `/api/v1/ee/budgets`; `projekt_id: null` = mandantenweit. */
+/** Eingabe für POST/PUT `/api/v1/budgets`; `projekt_id: null` = mandantenweit. */
 export const budgetEingabeSchema = z.strictObject({
   projekt_id: z.uuid().nullable(),
   bezeichnung: z.string().trim().max(200).nullable().optional(),

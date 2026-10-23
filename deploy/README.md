@@ -208,7 +208,7 @@ Das Standard-Image (`docker build .`, Ziel `runtime`) enthält nur den Kern (Apa
 Das ee-Image baut das Ziel `runtime-ee`: `docker build --target runtime-ee -t seatmeter-ee:latest --build-arg GIT_SHA=$(git rev-parse --short HEAD) .`
 
 - Server: `/app/ee` ist der Prod-Stand von `@seatmeter/ee-server` samt `@seatmeter/server` (eine Kopie für Kern und Plugin); `/app/server` zeigt per Link darauf, Start und Einmal-Jobs (`node /app/server/dist/main.js --einmal <job>`) also wie im Kern-Image; `SEATMETER_PLUGINS=@seatmeter/ee-server` ist im Image gesetzt.
-- Dashboard: gebaut mit `SEATMETER_WEB_PLUGINS=@seatmeter/ee-web` (Vite lädt die ee-Seiten über das virtuelle Modul `virtual:seatmeter-web-plugins`, `packages/web/web-plugins.ts`) und `VITE_SEATMETER_EE=1`.
+- Dashboard: gebaut mit `SEATMETER_WEB_PLUGINS=@seatmeter/ee-web` (Vite lädt die ee-Seiten über das virtuelle Modul `virtual:seatmeter-web-plugins`, `packages/web/web-plugins.ts`).
 - Lizenz: `ee/LICENSE` liegt als `/app/ee/LICENSE` im Image; die ee-Routen prüfen den Lizenzschlüssel (Modul `lizenz`, ee).
 
 ### Lizenzdatei, OIDC und Plattform-Admin (ee)
@@ -217,12 +217,12 @@ Das ee-Image baut das Ziel `runtime-ee`: `docker build --target runtime-ee -t se
 - **OIDC:** Client beim Provider anlegen (Redirect `<SEATMETER_PUBLIC_URL>/api/v1/auth/oidc/callback`, Scopes `openid profile email groups`, PKCE S256, `client_secret_basic`, Gruppen möglichst im ID-Token), dann die `SEATMETER_OIDC_*`-Variablen setzen. Die Anmeldeseite zeigt danach „Mit <Bezeichnung> anmelden“.
 - **Plattform-Admin:** über die Gruppen-Zuordnung (`{"plattform_admin":true}`) oder ohne Dashboard mit `docker exec <server> node /app/ee/dist/cli-plattform-admin.js --benutzer <anmeldename>`. Plattform-Admins legen Mandanten an (Dashboard „Mandanten“) und sehen jeden Mandanten nur aggregiert.
 
-### Budgets, Alarmkanäle und Abgleich (ee)
+### Budgets, Alarmkanäle und Abgleich (Kern seit 2026-10-24)
 
-- **Alarmkanal** (Dashboard „Budgets und Alarme“ oder `POST /api/v1/ee/alarmkanal`): `webhook` (JSON-POST, optional Bearer-Token), `smtp` (Host, Port, TLS, Absender, Empfänger; Passwort als Geheimnis) oder `weeberwrk-relay` (URL des Alarm-Relays, Pfad `/dm` oder `/alert`, Relay-Token als Geheimnis). Geheimnisse werden nur verschlüsselt gespeichert und nie angezeigt. „Testen“ schickt eine Testnachricht (Relay `/dm`: nur Prüfung, keine Nachricht).
+- **Alarmkanal** (Dashboard „Budgets und Alarme“ oder `POST /api/v1/alarmkanal`): `webhook` (JSON-POST, optional Bearer-Token), `smtp` (Host, Port, TLS, Absender, Empfänger; Passwort als Geheimnis) oder `weeberwrk-relay` (URL des Alarm-Relays, Pfad `/dm` oder `/alert`, Relay-Token als Geheimnis). Geheimnisse werden nur verschlüsselt gespeichert und nie angezeigt. „Testen“ schickt eine Testnachricht (Relay `/dm`: nur Prüfung, keine Nachricht).
 - **Budget:** je Projekt oder mandantenweit, Betrag in EUR/USD (Projektpreis) oder Tokens, Schwellen Standard 50/80/100 %. Sofort prüfen: `node /app/server/dist/main.js --einmal budgets.pruefen`. Jede Schwelle meldet sich je Monat genau einmal; Quittieren beendet nur die Anzeige (keine Entwarnung).
-- **Analytics-Key** (nur Claude Enterprise; Primary Owner legt in claude.ai einen Key mit Scope `read:analytics` an): `PUT /api/v1/ee/abgleich/analytics-key` mit `{ "key": "…" }`; sofort abgleichen mit `POST /api/v1/ee/abgleich/lauf?von=JJJJ-MM-TT&bis=JJJJ-MM-TT` oder `--einmal abgleich.analytics`.
-- **Team-CSV:** Spend-Report aus den Org-Analytics hochladen (Seite „Abgleich“): erst Vorschau (`POST /api/v1/ee/abgleich/csv/vorschau`), Spalten bei Bedarf zuordnen, dann Import (`POST /api/v1/ee/abgleich/csv`, auch `Content-Type: text/csv`).
+- **Analytics-Key** (nur Claude Enterprise; Primary Owner legt in claude.ai einen Key mit Scope `read:analytics` an): `PUT /api/v1/abgleich/analytics-key` mit `{ "key": "…" }`; sofort abgleichen mit `POST /api/v1/abgleich/lauf?von=JJJJ-MM-TT&bis=JJJJ-MM-TT` oder `--einmal abgleich.analytics`.
+- **Team-CSV:** Spend-Report aus den Org-Analytics hochladen (Seite „Abgleich“): erst Vorschau (`POST /api/v1/abgleich/csv/vorschau`), Spalten bei Bedarf zuordnen, dann Import (`POST /api/v1/abgleich/csv`, auch `Content-Type: text/csv`).
 - Ohne Abgleich zieht die Kalkulation keine Überschreitung ab („Überschreitung nicht abgezogen“).
 
 ## Open-Source-Export

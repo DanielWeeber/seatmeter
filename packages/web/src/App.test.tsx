@@ -1,7 +1,6 @@
 // Dashboard als Ganzes: Navigation, Anmelde-Tor und Systemzustand.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { eeAktiv } from './navigation';
 import { json, ME_ADMIN } from './test/fixtures';
 import { rendereApp } from './test/hilfen';
 
@@ -19,6 +18,9 @@ describe('Dashboard', () => {
       'Datenqualität',
       'Berichte',
       'Einstellungen',
+      'Budgets und Alarme',
+      'Projekt-Hinweise',
+      'Abgleich',
       'Systemzustand',
     ]) {
       expect(within(nav).getByRole('link', { name: titel })).toBeTruthy();
@@ -26,11 +28,10 @@ describe('Dashboard', () => {
     expect(within(nav).queryByText('Mandanten')).toBeNull();
   });
 
-  it('zeigt ee-Einträge nur mit Feature-Flag', async () => {
-    rendereApp('/einstellungen', {}, { mitEe: true });
-    expect(await screen.findByRole('link', { name: 'Budgets und Alarme' })).toBeTruthy();
-    expect(eeAktiv({ VITE_SEATMETER_EE: '1' })).toBe(true);
-    expect(eeAktiv({})).toBe(false);
+  it('zeigt Budgets, Hinweise und Abgleich ohne ee als Kernseiten (kein Platzhalter)', async () => {
+    rendereApp('/budgets', {});
+    expect(await screen.findByRole('heading', { name: 'Budgets und Alarme' })).toBeTruthy();
+    expect(screen.queryByText('Diese Seite entsteht in einer der nächsten Phasen.')).toBeNull();
   });
 
   it('reicht den Monat in der Navigation weiter', async () => {
