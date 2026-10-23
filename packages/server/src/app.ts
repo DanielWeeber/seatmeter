@@ -25,7 +25,7 @@ export const logSerializer: NonNullable<
     req: (anfrage: { id?: string; method?: string; url?: string }) => ({
       id: anfrage.id,
       method: anfrage.method,
-      // Einladungslinks (ee, `/einladung/<token>`) tragen ein Geheimnis im Pfad: nie ins Log.
+      // Einladungslinks (`/einladung/<token>`, Modul konten) tragen ein Geheimnis im Pfad: nie ins Log.
       path: (anfrage.url ?? '').split('?', 1)[0]?.replace(/^\/einladung\/[^/]+/, '/einladung/…'),
     }),
     res: (antwort: { statusCode?: number }) => ({ statusCode: antwort.statusCode }),

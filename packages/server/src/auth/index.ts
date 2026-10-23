@@ -258,7 +258,7 @@ export const authPlugin: SeatmeterPlugin = {
       return reply.code(204).send();
     });
 
-    // Für die Anmeldeseite: Formular (lokal) und Knöpfe der Plugin-Provider (ee: OIDC). Mit `?email=`
+    // Für die Anmeldeseite: Formular (lokal) und Knöpfe der Auth-Provider (Modul oidc). Mit `?email=`
     // bzw. `?mandant=` zusätzlich der Anmeldedienst des Mandanten (ee: verifizierte Domain → Mandant);
     // die Antwort hängt nie davon ab, ob ein Konto existiert. Abfragen je Adresse begrenzt.
     const abfragenJeAdresse = new TokenEimer();

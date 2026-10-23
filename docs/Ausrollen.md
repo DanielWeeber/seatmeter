@@ -10,14 +10,14 @@ Vor dem Start: Betriebsvereinbarung bzw. Zustimmung des Betriebsrats ([Betriebsr
 | ------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------- | -------------------------- |
 | **A** Claude Code OTel    | Claude Code exportiert je API-Anfrage Zähler und Metadaten (OpenTelemetry, HTTP)     | `https://<ingest-host>/otlp/v1/*`      | **Minimum**                |
 | **B** `seatmeter-agent`   | lokaler Agent liest nur die Zählerfelder der Transkripte (Hooks und/oder Sweeper)    | `https://<ingest-host>/api/ingest/v1/*` | empfohlen                  |
-| **C** Abgleich (ee)       | Enterprise Analytics API bzw. Team-Spend-Report (CSV) für den Abzug der Überschreitung | Server ruft ab bzw. Upload im Dashboard | optional                   |
+| **C** Abgleich            | Enterprise Analytics API bzw. Team-Spend-Report (CSV) für den Abzug der Überschreitung | Server ruft ab bzw. Upload im Dashboard | optional                   |
 
 **Empfehlung:** A organisationsweit plus B auf allen Rechnern. B fängt verlorene OTel-Exporte auf, liefert die Aufteilung der Cache-Schreibvorgänge in 5 min/1 h und das Projekt je Anfrage (Sitzungen über mehrere Repos); A und B werden über die `request_id` zusammengeführt (keine Doppelzählung). Mit B kann A außerdem das Rechner-Token statt eines gemeinsamen Mandanten-Tokens nutzen. A allein ist das Minimum; dann gilt für Cache-Schreibvorgänge die Annahme „1 h“ (Einstellung `cache_write_annahme`).
 
 ## 2. Vorbereitung
 
 1. **Mandant:** Free-Edition: genau ein Mandant aus der Einrichtung (Seite „Einrichtung“, `deploy/README.md`). ee: Ein Plattform-Admin legt den Mandanten im Plattform-Bereich auf der Seite „Mandanten“ an (`/plattform/mandanten`).
-2. **Org-UUID(s)** aus den claude.ai-Admin-Einstellungen (Organisation) in die Positivliste eintragen: Free per CLI `mandant:anlegen --org <uuid>` (`deploy/README.md`), ee auf der Seite „Tokens und Orgs“ (Einrichtung, Mandanten-Admin) bzw. im Plattform-Bereich unter „Mandanten“ → Mandant. Nur Anfragen dieser Orgs zählen als Abo-Nutzung.
+2. **Org-UUID(s)** aus den claude.ai-Admin-Einstellungen (Organisation) in die Positivliste eintragen: per CLI `mandant:anlegen --org <uuid>` (`deploy/README.md`) oder auf der Seite „Tokens und Orgs“ (Einrichtung, Mandanten-Admin); mit ee auch im Plattform-Bereich unter „Mandanten“ → Mandant. Nur Anfragen dieser Orgs zählen als Abo-Nutzung.
 3. **Plan und Abrechnungsmodell** hinterlegen: `team` oder `enterprise`; Kontingent oder nutzungsbasiert (Architektur §4).
 4. **Sitze:** Sitztypen und Preise auf „Preise & Sitzkosten“ (vorbelegt: Max 5x 100 USD und Max 20x 200 USD je Monat; Team-/Enterprise-Sitze `standard`, `premium`, `enterprise` mit den Preisen des Vertrags ergänzen), Sitz je Person (`PUT /api/v1/personen/<id>/sitz`). Personen erscheinen erst mit ihrer ersten Nutzung; der Upload einer Sitzliste (§10.1) ist noch nicht umgesetzt.
 5. **Preise prüfen:** globale Preistabelle (Quelle und Prüfdatum je Zeile), bei Vertragspreisen eigene Zeilen des Mandanten.
@@ -123,7 +123,7 @@ Ohne Weg (a) greift `forceLogin*` nicht. Sitzungen mit API-Schlüssel oder fremd
 2. `managed-settings.json` aus Tab (a) mit **Helper** und „Anmeldung erzwingen“ per MDM verteilen.
 3. Agent-Paket je Rechner: Installskript bzw. Binary plus Einmalcode je Rechner (Seite „Rechner/Agenten“ oder Tab e, mit Rechner-Bezeichnung). Codes gelten 24 h, also kurz vor der Verteilung erzeugen. Im Paket `install --register` nutzen, weil der Sweeper ohne Terminal sonst nicht registriert wird.
 4. Setzt der Kunde `allowManagedHooksOnly`, ignoriert Claude Code die Hooks in `~/.claude/settings.json`: entweder `install --sweeper-only` oder die Hook-Einträge, die `install --hooks` schreiben würde, in die Managed Settings übernehmen.
-5. Abgleich (ee): **nur Enterprise** – der Primary Owner legt in claude.ai einen Analytics-Key (Scope `read:analytics`) an, der Mandanten-Admin hinterlegt ihn auf der Seite „Abgleich“. Team: Spend-Report-CSV dort hochladen.
+5. Abgleich: **nur Enterprise** – der Primary Owner legt in claude.ai einen Analytics-Key (Scope `read:analytics`) an, der Mandanten-Admin hinterlegt ihn auf der Seite „Abgleich“. Team: Spend-Report-CSV dort hochladen.
 6. Prüfen (Abschnitt 8).
 
 Enterprise ohne MDM rollt wie Team über Weg (b) aus.

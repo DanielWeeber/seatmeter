@@ -214,7 +214,7 @@ describe('Anmelde-Tor', () => {
     expect(await screen.findByText('Anmeldung im Server noch nicht aktiv.')).toBeTruthy();
   });
 
-  it('Anmeldeseite zeigt den SSO-Knopf, wenn der Server einen Anbieter meldet (ee: OIDC)', async () => {
+  it('Anmeldeseite zeigt den SSO-Knopf, wenn der Server einen Anbieter meldet (Modul oidc)', async () => {
     rendereApp('/', {
       '/api/v1/auth/me': json({ fehler: 'nicht angemeldet' }, 401),
       '/api/v1/auth/setup': json({ noetig: false }),

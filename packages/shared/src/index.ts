@@ -15,4 +15,4 @@ export * from './hinweise.js';
 export * from './abgleich.js';
 export * from './issue-schluessel.js';
 export * from './issues.js';
-export * from './ee-jira.js';
+export * from './jira.js';

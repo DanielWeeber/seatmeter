@@ -14,6 +14,8 @@ import { Budgets } from './seiten/budgets/Budgets';
 import { Datenqualitaet } from './seiten/Datenqualitaet';
 import { Einstellungen } from './seiten/Einstellungen';
 import { Hinweise } from './seiten/hinweise/Hinweise';
+import { Jira } from './seiten/jira/Jira';
+import { JiraKosten } from './seiten/jira/JiraKosten';
 import { Mandant } from './seiten/mandant/Mandant';
 import { Personen } from './seiten/Personen';
 import { Platzhalter } from './seiten/Platzhalter';
@@ -41,6 +43,8 @@ const SEITEN: Record<string, ReactElement> = {
   '/budgets': <Budgets />,
   '/hinweise': <Hinweise />,
   '/abgleich': <Abgleich />,
+  '/einrichtung/jira': <Jira />,
+  '/jira-kosten': <JiraKosten />,
   '/mandant': <Mandant />,
   '/einrichtung/sso': <SsoUndKonten />,
 };

@@ -38,10 +38,11 @@ Ein Container `server` (API, Ingest, Dashboard) und ein Postgres 18. Der Server 
 | `SEATMETER_AGENT_RELEASE_URL` | nein | Download-Ordner des Agent-Releases, z. B. `https://<forgejo-host>/<org>/seatmeter/releases/download/v0.1.0`; die Seite „Ausrollen“ baut daraus den Installationsbefehl |
 | `SEATMETER_TRUST_PROXY` | hinter Proxy | Woher die Client-IP für Ratenlimits und Anmelde-Sperre kommt: leer/`aus` = Socket-Adresse (X-Forwarded-For wird ignoriert); `1` (Anzahl der Proxy-Stufen) oder kommagetrennte IPs/CIDRs der Proxys = aus `X-Forwarded-For`. Nur setzen, wenn alle Anfragen über den Proxy kommen und er X-Forwarded-For selbst setzt (Caddy tut das) |
 | `SEATMETER_RATE_OTLP`, `SEATMETER_RATE_AGENT`, `SEATMETER_RATE_IP`, `SEATMETER_RATE_FEHLVERSUCHE`, `SEATMETER_RATE_ENROLL`, `SEATMETER_RATE_ENROLL_FEHLVERSUCHE` | nein | Ratenlimits der Ingest-Pfade als `<anfragen_pro_minute>/<stoss>`, siehe „Ratenlimits“ |
-| `SEATMETER_PLUGINS` | nein | kommagetrennte Plugin-Module (ee, nur mit Lizenz) |
+| `SEATMETER_PLUGINS` | nein | kommagetrennte Plugin-Module (ee: Mandantenfähigkeit, nur mit Lizenz) |
 | `SEATMETER_LIZENZ_DATEI` | nur ee | Pfad der signierten Lizenzdatei (read-only gemountet), siehe „Lizenz und ee-Image“ |
-| `SEATMETER_OIDC_ISSUER`, `SEATMETER_OIDC_CLIENT_ID`, `SEATMETER_OIDC_CLIENT_SECRET` | nur ee | OIDC-Anmeldung (Authelia als Referenz); weitere Variablen in `ee/server/README.md` |
-| `SEATMETER_OIDC_GRUPPEN` | nein (ee) | Gruppen → Rollen als JSON, z. B. `{"admins":[{"mandant":"meine-firma","rolle":"mandanten_admin"},{"plattform_admin":true}]}` |
+| `SEATMETER_OIDC_ISSUER`, `SEATMETER_OIDC_CLIENT_ID`, `SEATMETER_OIDC_CLIENT_SECRET` | nein | OIDC-Anmeldung über den Anbieter des Betreibers (Authelia als Referenz); weitere Variablen in `packages/server/src/oidc/README.md`. SSO je Mandant richtet der Mandanten-Admin im Dashboard ein (`docs/SSO-und-SCIM.md`) |
+| `SEATMETER_OIDC_GRUPPEN` | nein | Gruppen → Rollen als JSON, z. B. `{"admins":[{"mandant":"meine-firma","rolle":"mandanten_admin"},{"plattform_admin":true}]}`; das Ziel `plattform_admin` wirkt nur mit ee |
+| `SEATMETER_JIRA_INTERN_ERLAUBT` | nein | `1` erlaubt für die Jira-Anbindung http und Ziele im internen Netz (Selbstbetrieb mit Jira Data Center im Firmennetz); Standard aus |
 
 ## Reverse-Proxy
 
@@ -154,9 +155,9 @@ Der Server plant seine Jobs selbst (Cron in UTC, Advisory-Lock, Protokoll in `jo
 | `kurs.ezb` | täglich 03:00 | EZB-Kurs USD/EUR (Monatsmittel endgültig, laufender Monat vorläufig aus den Tageskursen); braucht ausgehendes HTTPS zu `data-api.ecb.europa.eu` |
 | `kalkulation.monatsabschluss` | am 1. um 03:30 | Vormonat je Mandant einfrieren (vorhandene Abschlüsse bleiben) |
 | `aufbewahrung.loeschen` | täglich 02:45 | Löschläufe laut Fristen, protokolliert in `loeschlauf` |
-| `budgets.pruefen` (ee) | stündlich, Minute 7 | Budgets gegen Schwellen prüfen, je Schwelle ein Alarm, Zustellung über die Alarmkanäle |
-| `hinweise.erzeugen` (ee) | täglich 04:30 | Projekt-Hinweise des laufenden Monats |
-| `abgleich.analytics` (ee) | täglich 05:00 | Analytics API (nur Mandanten mit Key): letzte 8 UTC-Tage → `ueberschreitung`, `abgleich_lauf`; braucht ausgehendes HTTPS zu `api.anthropic.com` |
+| `budgets.pruefen` | stündlich, Minute 7 | Budgets gegen Schwellen prüfen, je Schwelle ein Alarm, Zustellung über die Alarmkanäle |
+| `hinweise.erzeugen` | täglich 04:30 | Projekt-Hinweise des laufenden Monats |
+| `abgleich.analytics` | täglich 05:00 | Analytics API (nur Mandanten mit Key): letzte 8 UTC-Tage → `ueberschreitung`, `abgleich_lauf`; braucht ausgehendes HTTPS zu `api.anthropic.com` |
 
 ## Kalkulation einrichten (Sitzkosten, Kurs, Monatsabschluss)
 
@@ -178,6 +179,17 @@ Alles über die Dashboard-API mit Admin-Rolle (Seite „Preise & Sitzkosten“ b
 2. Neuen Stand holen und bauen: `git pull` (bzw. gewünschtes Tag auschecken), `docker compose -f deploy/compose.yml build server`.
 3. Nur den Server erneuern: `docker compose -f deploy/compose.yml up -d server`. Der Dienst fehlt dabei wenige Sekunden; Postgres läuft weiter.
 4. Warten, bis `docker compose -f deploy/compose.yml ps` wieder `healthy` zeigt. Schlägt der Start fehl, steht der Grund im Log (`docker compose -f deploy/compose.yml logs --tail 50 server`); dann das vorige Image wieder als `seatmeter:latest` taggen und Schritt 3 wiederholen.
+
+## Aktualisierung von Ständen vor 2026-10-24
+
+Seit 2026-10-24 gehören Budgets und Alarmkanäle, Projekt-Hinweise, Abgleich, Jira, OIDC/SSO (global und je Mandant), Domains, Konten und Einladungen, SCIM und die Selbstverwaltung des Mandanten zum Kern; `ee/` enthält nur noch die Mandantenfähigkeit (Plattform-Admin, Mandanten anlegen/ändern/löschen, Kontenkontingent, Plattform-Protokoll, Lizenz).
+
+- **Kein Handgriff nötig:** wie unter „Update“ neues Image bauen und den Server neu starten. Beim Start laufen erst die Kern-Migrationen (Protokoll `kysely_migration`), danach die des ee-Plugins (`kysely_migration_ee`). Die neuen Kern-Migrationen `2026_10_24_0022_budgets_hinweise`, `2026_10_24_0023_sso_je_mandant`, `2026_10_24_0024_scim` und `2026_10_24_0025_jira` sind idempotent: Hat die frühere ee-Migration eine Tabelle schon angelegt, ändern sie nichts (Tabellen und Indizes nur `IF NOT EXISTS`, Richtlinie `mandant_trennung` nur, wenn sie fehlt, Rechte der Anwendungsrolle); sonst legen sie sie an. Daten bleiben erhalten, die Tabellennamen bleiben gleich (auch `ee_einstellung`).
+- **ee-Migrationen:** `2026_10_22_0002_budgets_hinweise`, `2026_10_23_0004_sso_je_mandant`, `2026_10_23_0005_scim` und `2026_10_23_0006_jira` bleiben als leere Platzhalter registriert, damit der Migrator auf vorhandenen Installationen keine fehlende Migration meldet. Auf einer frischen Installation legt der Kern die Tabellen an, die Platzhalter laufen danach ohne Wirkung.
+- **Geänderte API-Pfade:** Die Routen der umgezogenen Module haben kein `/ee/` mehr, z. B. `/api/v1/ee/budgets` → `/api/v1/budgets`, `/api/v1/ee/alarmkanal` → `/api/v1/alarmkanal`, `/api/v1/ee/hinweise` → `/api/v1/hinweise`, `/api/v1/ee/abgleich/…` → `/api/v1/abgleich/…`, `/api/v1/ee/jira/…` → `/api/v1/jira/…`, `/api/v1/ee/jobs/{budgets/pruefen,hinweise/erzeugen}` → `/api/v1/jobs/…`. Die Selbstverwaltung `/api/v1/ee/mandanten/:id/{oidc,domains,konten,scim-tokens,rollen,tokens,anthropic-orgs}` liegt unter `/api/v1/mandant/{…}` (aktiver Mandant der Sitzung oder `?mandant=<id>`), die Kontenliste eines Mandanten unter `/api/v1/mandant/benutzer`. Unverändert: `/scim/v2`, `/api/v1/auth/oidc/*`, `/api/v1/auth/einladung*` und die ee-Routen `/api/v1/ee/{mandanten,mandanten/:id,plattform-audit,benutzer,lizenz}`. Eigene Skripte gegen alte Pfade anpassen; Dashboard und Agent brauchen nichts (der Agent nutzt nur Ingest und Enrollment).
+- **Lizenz:** Vorhandene Lizenzdateien bleiben gültig. Wirksam ist nur noch das Modul `mandanten`; weitere Einträge (`oidc`, `budgets`, `abgleich`) werden ignoriert, die Funktionen laufen ohnehin ohne Lizenz.
+- **Ohne ee weiter:** Wer vom Ziel `runtime-ee` auf `runtime` wechselt, behält alle Kern-Funktionen samt Daten; es fehlen danach der Plattform-Bereich, das Kontenkontingent und die Rechte der Plattform-Admins. Die ee-Tabellen (`plattform_admin`, `plattform_audit`) und `kysely_migration_ee` bleiben unberührt liegen.
+- **Geprüft:** `packages/server/test/migration-umzug.test.ts` (Stand vor 2026-10-24 ohne ee → neue Kern-Migrationen) und `ee/server/test/migration-umzug.test.ts` (alte ee-Migrationen mit Beispieldaten → neue Kern-Migrationen → heutige ee-Migrationen); beide vergleichen das Schema mit einer frischen Installation.
 
 ## Backup und Wiederherstellung
 
@@ -203,19 +215,19 @@ In ein **frisches** Postgres (neues Volume, Wegwerf-Container) zuerst die App-Ro
 
 ## Lizenz und ee-Image
 
-Das Standard-Image (`docker build .`, Ziel `runtime`) enthält nur den Kern (Apache-2.0, `LICENSE` und `NOTICE` liegen unter `/app`). Bezahlte Erweiterungen aus `ee/` sind nicht enthalten.
+Das Standard-Image (`docker build .`, Ziel `runtime`) enthält den Kern (Apache-2.0, `LICENSE` und `NOTICE` liegen unter `/app`) und damit alles außer der Mandantenfähigkeit: Budgets und Alarme, Projekt-Hinweise, Abgleich, Jira, OIDC/SSO, Konten, SCIM. `ee/` ist nicht enthalten; es gibt dann genau die Mandanten, die Einrichtung oder CLI anlegen, ohne Plattform-Bereich.
 
-Das ee-Image baut das Ziel `runtime-ee`: `docker build --target runtime-ee -t seatmeter-ee:latest --build-arg GIT_SHA=$(git rev-parse --short HEAD) .`
+Das ee-Image baut das Ziel `runtime-ee` und ergänzt den Plattform-Bereich (Plattform-Admin, Mandanten anlegen/ändern/löschen, Kontenkontingent, Plattform-Protokoll, Lizenzprüfung): `docker build --target runtime-ee -t seatmeter-ee:latest --build-arg GIT_SHA=$(git rev-parse --short HEAD) .`
 
 - Server: `/app/ee` ist der Prod-Stand von `@seatmeter/ee-server` samt `@seatmeter/server` (eine Kopie für Kern und Plugin); `/app/server` zeigt per Link darauf, Start und Einmal-Jobs (`node /app/server/dist/main.js --einmal <job>`) also wie im Kern-Image; `SEATMETER_PLUGINS=@seatmeter/ee-server` ist im Image gesetzt.
 - Dashboard: gebaut mit `SEATMETER_WEB_PLUGINS=@seatmeter/ee-web` (Vite lädt die ee-Seiten über das virtuelle Modul `virtual:seatmeter-web-plugins`, `packages/web/web-plugins.ts`).
-- Lizenz: `ee/LICENSE` liegt als `/app/ee/LICENSE` im Image; die ee-Routen prüfen den Lizenzschlüssel (Modul `lizenz`, ee).
+- Lizenz: `ee/LICENSE` liegt als `/app/ee/LICENSE` im Image; nur die ee-Routen (`/api/v1/ee/…`) prüfen den Lizenzschlüssel (Lizenzmodul `mandanten`).
 
-### Lizenzdatei, OIDC und Plattform-Admin (ee)
+### Lizenzdatei und Plattform-Admin (ee), OIDC (Kern)
 
-- **Lizenz:** weeberwrk stellt die Datei aus (`ee/server/README.md`, „Ausstellen“). Auf dem Host als `lizenz.json` (600) neben `compose.yml` ablegen, im Dienst `server` read-only mounten (`./lizenz.json:/run/seatmeter/lizenz.json:ro`) und `SEATMETER_LIZENZ_DATEI=/run/seatmeter/lizenz.json` setzen. Austausch ohne Neustart: Datei ersetzen (gleicher Pfad), der Server prüft alle 10 Minuten. Kontrolle: `GET /api/v1/ee/lizenz` (Admin) bzw. `ee` in `/api/v1/auth/me`.
-- **OIDC:** Client beim Provider anlegen (Redirect `<SEATMETER_PUBLIC_URL>/api/v1/auth/oidc/callback`, Scopes `openid profile email groups`, PKCE S256, `client_secret_basic`, Gruppen möglichst im ID-Token), dann die `SEATMETER_OIDC_*`-Variablen setzen. Die Anmeldeseite zeigt danach „Mit <Bezeichnung> anmelden“.
-- **Plattform-Admin:** über die Gruppen-Zuordnung (`{"plattform_admin":true}`) oder ohne Dashboard mit `docker exec <server> node /app/ee/dist/cli-plattform-admin.js --benutzer <anmeldename>`. Plattform-Admins legen Mandanten an (Dashboard „Mandanten“) und sehen jeden Mandanten nur aggregiert.
+- **Lizenz:** weeberwrk stellt die Datei aus (`ee/server/README.md`, „Ausstellen“). Auf dem Host als `lizenz.json` (600) neben `compose.yml` ablegen, im Dienst `server` read-only mounten (`./lizenz.json:/run/seatmeter/lizenz.json:ro`) und `SEATMETER_LIZENZ_DATEI=/run/seatmeter/lizenz.json` setzen. Austausch ohne Neustart: Datei ersetzen (gleicher Pfad), der Server prüft alle 10 Minuten. Kontrolle: `GET /api/v1/ee/lizenz` (Admin) bzw. `ee` in `/api/v1/auth/me`. Wirksam ist nur das Modul `mandanten`; ältere Dateien mit weiteren Modulen bleiben gültig.
+- **OIDC:** Client beim Provider anlegen (Redirect `<SEATMETER_PUBLIC_URL>/api/v1/auth/oidc/callback`, Scopes `openid profile email groups`, PKCE S256, `client_secret_basic`, Gruppen möglichst im ID-Token), dann die `SEATMETER_OIDC_*`-Variablen setzen. Die Anmeldeseite zeigt danach „Mit <Bezeichnung> anmelden“. Kern, keine Lizenz nötig; SSO je Mandant und SCIM: `docs/SSO-und-SCIM.md`.
+- **Plattform-Admin (ee):** über die Gruppen-Zuordnung (`{"plattform_admin":true}`) oder ohne Dashboard mit `docker exec <server> node /app/ee/dist/cli-plattform-admin.js --benutzer <anmeldename>`. Plattform-Admins legen Mandanten an (Plattform-Bereich → „Mandanten“), setzen das Kontenkontingent, verwalten jeden Mandanten über die Kern-Seiten bzw. `/api/v1/mandant/…?mandant=<id>` und sehen dessen Auswertungen nur aggregiert.
 
 ### Budgets, Alarmkanäle und Abgleich (Kern seit 2026-10-24)
 

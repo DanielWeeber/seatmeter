@@ -294,7 +294,7 @@ export const authAnbieterSchema = vertrag<AuthAnbieter>()(
     anbieter: z.array(
       z.object({ name: z.string(), titel: z.string(), start: z.string().nullable() }),
     ),
-    // Nur bei ?email= / ?mandant= (ee, SSO je Mandant); alte Server lassen das Feld weg.
+    // Nur bei ?email= / ?mandant= (SSO je Mandant); alte Server lassen das Feld weg.
     oidc: z.object({ bezeichnung: z.string(), start_url: z.string() }).nullable().optional(),
   }),
 );

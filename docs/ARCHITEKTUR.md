@@ -1,6 +1,6 @@
 # seatmeter – Architektur
 
-## 0. Festlegungen (Daniel 2026-10-22)
+## 0. Festlegungen (Daniel 2026-10-22, ergänzt 2026-10-23)
 
 Diese Festlegungen gehen den übrigen Abschnitten vor, wo sie davon abweichen.
 
@@ -14,7 +14,8 @@ Diese Festlegungen gehen den übrigen Abschnitten vor, wo sie davon abweichen.
 - **Auswertungsstufe:** Stufe 1 ist Standard; Klarnamen nur per Opt-in des Mandanten.
 - **Währung:** EUR; Umrechnung mit dem EZB-Monatsmittel.
 - **Agent-Verteilung:** Installskript plus Binary aus den Forgejo-Releases; keine Apple-Notarisierung in v1.
-- **Hinweise:** Projekt-Hinweise gehören zu `ee/`, Datenqualitäts-Hinweise sind frei (Kern).
+- **Hinweise:** Projekt-Hinweise gehören zu `ee/`, Datenqualitäts-Hinweise sind frei (Kern). Überholt durch „Open Core“ (2026-10-23): auch Projekt-Hinweise sind Kern.
+- **Open Core (Daniel 2026-10-23):** `ee/` enthält nur noch die **Mandantenfähigkeit**: Lizenzprüfung, Plattform-Admin, Mandanten anlegen, ändern und löschen, Kontenkontingent, Plattform-Protokoll und den Plattform-Bereich im Dashboard. Alles andere ist Kern (Apache-2.0) und läuft ohne Lizenz: Budgets und Alarme, Projekt-Hinweise, Abgleich, Jira, OIDC/SSO (global und je Mandant), Domains, Konten und Einladungen, SCIM und die Selbstverwaltung eines Mandanten. Eine Installation für eine Organisation ohne `ee/` hat jede Funktion. Umgesetzt am 2026-10-24 (Abschnitt 8 und 14, „Umzug in den Kern“).
 
 Entwurf v0.1 vom 2026-10-22, Projekt startup (weeberwrk). Produktentscheidungen stammen von Daniel (2026-10-22) und werden hier nicht neu verhandelt.
 Belegte Fakten tragen einen Link in Abschnitt 13, alles Unbelegte steht als „nicht verifiziert“ in Abschnitt 12.
@@ -34,7 +35,7 @@ Gespeichert werden nur Zähler und Metadaten, nie Inhalte (keine Prompts, Antwor
 | **Anfrage** | Ein API-Request von Claude Code, kleinste Zähleinheit, Schlüssel `request_id` (`req_…`). |
 | **Quelle A** | OpenTelemetry-Export von Claude Code, organisationsweit per (Managed) Settings. |
 | **Quelle B** | Lokaler Agent nach CCAM-Muster: Hooks plus Transkript-Zähler, Push mit Rechner-Token. |
-| **Quelle C (ee)** | Abgleich: Enterprise Analytics API oder Team-Spend-Report (CSV). |
+| **Quelle C** | Abgleich: Enterprise Analytics API oder Team-Spend-Report (CSV). |
 | **Abo-Nutzung** | Anfrage über OAuth-Login einer Org des Mandanten. Gegenteil: API-/Provider-Nutzung (gefiltert) und Fremd-Org (gefiltert). |
 | **Überschreitung** | Nutzung über das Sitzkontingent hinaus, bezahlt als Usage Credits (echte Kosten in USD). |
 | **Schattenpreis** | Was die Abo-Nutzung zu API-Listenpreisen gekostet hätte (kalkulatorisch, nicht bezahlt). |
@@ -54,7 +55,8 @@ flowchart LR
   PG --> JOB[Jobs: Merge A/B, Tagesaggregat, Preise, Aufbewahrung]
   JOB --> PG
   PG --> API["/api/v1 Dashboard-API"] --> WEB[React-Dashboard]
-  EE["ee: Abgleich (Analytics API / CSV), Budgets, OIDC, Mandanten"] <--> PG
+  MOD["Module: Abgleich (Analytics API / CSV), Budgets, Hinweise, OIDC/SCIM, Jira"] <--> PG
+  EE["ee: Mandantenfähigkeit (Plattform-Admin, Mandanten, Kontingent)"] <--> PG
 ```
 
 ### 2.1 OTel-Empfänger (packages/server, Modul `ingest-otlp`)
@@ -87,14 +89,14 @@ flowchart LR
 ### 2.3 Server/API (packages/server)
 - Node 24 LTS, TypeScript, Fastify (Schema-Validierung, eigener Content-Type-Parser für Protobuf), zod-Schemas aus `packages/shared`, OpenAPI daraus erzeugt.
 - DB-Zugriff mit Kysely (typisiertes SQL) und Kysely-Migrator; Postgres 18.
-- Module: `ingest-otlp`, `ingest-agent`, `enrollment`, `merge` (A/B-Zusammenführung), `aggregation` (Tagesaggregat, nachts für die letzten 35 Tage plus bei Bedarf), `preise`, `kalkulation`, `berichte` (Betriebsrat, Projektabrechnung CSV), `aufbewahrung`, `auth` (lokal), `audit`. Erweiterungspunkt `SeatmeterPlugin` (Routen, Jobs, Auth-Provider, Navigation) für `ee/`.
+- Module: `ingest-otlp`, `ingest-agent`, `enrollment`, `merge` (A/B-Zusammenführung), `aggregation` (Tagesaggregat, nachts für die letzten 35 Tage plus bei Bedarf), `preise`, `kalkulation`, `berichte` (Betriebsrat, Projektabrechnung CSV), `aufbewahrung`, `auth` (lokal), `audit`, `issues`, `ausrollen`, `mandant` (Einstellungen und Selbstverwaltung), seit 2026-10-24 auch `budgets`, `hinweise`, `abgleich`, `jira`, `oidc`, `konten` und `scim`. Erweiterungspunkt `SeatmeterPlugin` (Routen, Jobs, Auth-Provider, Auth-Erweiterungen, Navigation) für `ee/` (Mandantenfähigkeit).
 - Endpunkte: `/otlp/v1/{logs,metrics}`, `/api/ingest/v1/{anfragen,sitzungen}`, `/api/agent/v1/{enroll,config,heartbeat}`, `/api/health`, `/api/health/ingest`, `/api/v1/…` (Dashboard).
 
 ### 2.4 Dashboard (packages/web)
 - React, Vite, TypeScript, Tailwind wie das Vorbild; TanStack Query, schlichte Diagramme (Recharts). Kein WebSocket, Abfrage beim Seitenaufruf genügt.
 - Seiten: Übersicht (Monat: Tokens, Schattenpreis, Sitzkosten, Projektpreise), Projekte (Liste, Detail je Modell/Tokentyp, Personen je Auswertungsstufe), Personen (Pseudonyme), Preise und Sitzkosten, Rechner/Agenten (Einmalcodes, zuletzt gesehen, Versionen), Datenqualität (Abdeckung A/B, unzugeordnet, gefilterte API-/Fremd-Org-Anfragen nur als Anzahl, verworfene Inhaltsereignisse), Berichte (Betriebsrat, Projektabrechnung), Einstellungen.
-- ee-Seiten: Budgets und Alarme, Projekt-Hinweise, Abgleich, Tokens und Orgs (eigener Mandant); im Plattform-Bereich Mandanten, Lizenz, Protokoll.
-- Navigation nach Rollen (Entscheidung Daniel 2026-10-23): Seitenleiste in den Gruppen **Auswertung** (alle Rollen: Übersicht, Projekte, Projektpreise, Personen, Rechner/Agenten, Datenqualität, Berichte, Systemzustand) und **Einrichtung** (Mandanten-Admin des aktiven Mandanten und Plattform-Admin: Einstellungen, Preise & Sitzkosten, Ausrollen, Budgets und Alarme, Projekt-Hinweise, Abgleich, Tokens und Orgs; später SSO und Konten, Jira). **Plattform** (nur Plattform-Admin) ist ein eigener Bereich unter `/plattform` mit Unternavigation (Mandanten, Lizenz, Protokoll) und Link zurück ins Dashboard, erreichbar nur über „Plattform-Bereich“ in der Kopfzeile. Die Kopfzeile zeigt den aktiven Mandanten (Wechsel ab zwei Mandanten), Anmeldename · Rolle und für Plattform-Admins zusätzlich „Plattform“. Umsetzung: Abschnitt 14, „Navigation nach Rollen“.
+- Seiten der Einrichtung (Kern): Budgets und Alarme, Projekt-Hinweise, Abgleich, Tokens und Orgs (eigener Mandant), SSO und Konten, Jira; in der Auswertung zusätzlich Jira-Kosten. ee-Seiten gibt es nur im Plattform-Bereich: Mandanten, Lizenz, Protokoll.
+- Navigation nach Rollen (Entscheidung Daniel 2026-10-23): Seitenleiste in den Gruppen **Auswertung** (alle Rollen: Übersicht, Projekte, Projektpreise, Personen, Rechner/Agenten, Datenqualität, Berichte, Systemzustand) und **Einrichtung** (Mandanten-Admin des aktiven Mandanten und Plattform-Admin: Einstellungen, Preise & Sitzkosten, Ausrollen, Budgets und Alarme, Projekt-Hinweise, Abgleich, Tokens und Orgs, SSO und Konten, Jira). **Plattform** (nur Plattform-Admin) ist ein eigener Bereich unter `/plattform` mit Unternavigation (Mandanten, Lizenz, Protokoll) und Link zurück ins Dashboard, erreichbar nur über „Plattform-Bereich“ in der Kopfzeile. Die Kopfzeile zeigt den aktiven Mandanten (Wechsel ab zwei Mandanten), Anmeldename · Rolle und für Plattform-Admins zusätzlich „Plattform“. Umsetzung: Abschnitt 14, „Navigation nach Rollen“.
 
 ### 2.5 Preismodul (packages/shared/preise, Server-Modul `preise`)
 - Preistabelle je Modell-**Präfix** (längster Präfix gewinnt; CCAMs `LIKE`-Muster haben genau hier Fehler erzeugt, `claude-opus-5%` traf `claude-opus-5-5`), mit `gueltig_ab`.
@@ -103,7 +105,7 @@ flowchart LR
 - Startwerte aus der offiziellen Preisseite (Stand 2026-10-22), mit Quelle und Prüfdatum je Zeile. Den CCAM-Seed nicht übernehmen (Beispiel: Sonnet 5.5 Cache-Read dort 0,20 $, offiziell 0,10 $).
 - Wir rechnen selbst und verwenden `cost_usd` aus OTel nur als Kontrolle, weil der Kunde es per `modelPricing` auf Vertragspreise umstellen kann.
 
-### 2.6 Abgleich-Modul (ee)
+### 2.6 Abgleich-Modul (Kern, Modul `abgleich`)
 - **Enterprise:** täglicher Abruf der Enterprise Analytics API (Beta) mit Kunden-Schlüssel (Scope `read:analytics`, verschlüsselt gespeichert):
   - `GET /v1/organizations/analytics/user_usage_report?products[]=claude_code&group_by[]=model&bucket_width=1d` – Tokens je Person/Tag/Modell, nur Sitz-Nutzer (kein API-Key-Verkehr). Vergleichsbasis für die Abo-Zählung.
   - `GET /v1/organizations/analytics/user_cost_report?products[]=claude_code&group_by[]=model&bucket_width=1d` – `amount` (nach Rabatt, vor Gutschrift) und `list_amount` je Person/Tag. Grundlage für den Abzug der Überschreitung.
@@ -120,7 +122,7 @@ Alle Tabellen tragen `mandant_id`; Row-Level-Security ab Tag 1 (`SET LOCAL app.m
 | Tabelle | Schlüssel | Wichtige Spalten |
 |---|---|---|
 | `mandant` | `id` | `name`, `slug`, `plan` (team, enterprise, max_pilot), `abrechnungsmodell` (kontingent, nutzungsbasiert), `auswertungsstufe` (0–3), `klarnamen_aktiv`, `zeitzone`, `waehrung`, `sitzkosten_verteilung` (person, gleich, pool), `code_anteil_sitz` (Standard 1,0), `schatten_faktor` (Standard 1,0), `cache_write_annahme` (1h) |
-| `mandant_geheimnis` | `mandant_id` | `person_salt`, `projekt_salt` (je 32 Byte), `analytics_key` (ee); alles mit AES-256-GCM unter `SEATMETER_MASTER_KEY` verschlüsselt |
+| `mandant_geheimnis` | `mandant_id` | `person_salt`, `projekt_salt` (je 32 Byte), `analytics_key` (Abgleich); alles mit AES-256-GCM unter `SEATMETER_MASTER_KEY` verschlüsselt |
 | `anthropic_org` | (`mandant_id`, `org_uuid`) | `bezeichnung`, `plan`, `gueltig_ab` – Positivliste für den Abo-Filter |
 | `ingest_token` | `id` | `typ` (mandant, rechner), `rechner_id`, `token_sha256` (unique), `praefix`, `erstellt`, `zuletzt_genutzt`, `widerrufen` |
 | `einmalcode` | `code_sha256` | `person_id` (optional), `laeuft_ab` (24 h), `genutzt_am` |
@@ -138,9 +140,9 @@ Alle Tabellen tragen `mandant_id`; Row-Level-Security ab Tag 1 (`SET LOCAL app.m
 | `monatsabschluss` | (`mandant_id`, `monat`, `projekt_id`) | eingefrorene Werte: Schatten, Sitzanteil, Überschreitung, Projektpreis, Kurs, Preisversion |
 | `kurs` | (`mandant_id`, `monat`) | `usd_eur` (EZB-Monatsmittel oder vom Mandanten gesetzt) |
 | `preis` | `id`; unique (`mandant_id` nullbar = global, `modell_praefix`, `gueltig_ab`) | Sätze laut 2.5, `quelle_url`, `geprueft_am` |
-| `ueberschreitung` (ee) | (`mandant_id`, `tag`, `person_id`, `model`) | `amount_usd_micros`, `list_amount_usd_micros`, Tokens je Typ, `quelle` (api, csv) |
-| `abgleich_lauf` (ee) | `id` | `zeitraum`, `status`, `abweichungen` (Zusammenfassung ohne Personendaten) |
-| `budget` / `alarm` (ee) | `id` | `projekt_id`, `zeitraum`, `betrag`, `basis` (projektpreis, tokens), `schwellen` {50, 80, 100}; `alarm`: `schwelle`, `ausgeloest`, `wert`, `quittiert` |
+| `ueberschreitung` | (`mandant_id`, `tag`, `person_id`, `model`) | `amount_usd_micros`, `list_amount_usd_micros`, Tokens je Typ, `quelle` (api, csv) |
+| `abgleich_lauf` | `id` | `zeitraum`, `status`, `abweichungen` (Zusammenfassung ohne Personendaten) |
+| `budget` / `alarm` | `id` | `projekt_id`, `zeitraum`, `betrag`, `basis` (projektpreis, tokens), `schwellen` {50, 80, 100}; `alarm`: `schwelle`, `ausgeloest`, `wert`, `quittiert` |
 | `benutzer` / `rolle` | `id` | `login` (lokal, oidc), `oidc_sub`, `passwort_hash` (argon2id); `rolle`: `mandant_id`, `rolle`, `projekt_ids` |
 | `audit` | `id` | `benutzer_id`, `aktion` (z. B. „Personensicht geöffnet“, „Export“, „Ansicht“), `objekt`, `ts` – ohne Personendaten der Gezählten |
 | `ingest_statistik` | (`mandant_id`, `tag`, `quelle`) | `angenommen`, `verworfen_inhalt`, `verworfen_api`, `verworfen_fremd_org`, `unzugeordnet` |
@@ -196,7 +198,7 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 - `S(p,d)` = Schattenpreis der Abo-Anfragen von p an d. Überschreitungsanteil `u(p,d) = min(1, ü_list / S)`.
 - Abo-Anteil der Tokens und des Schattenpreises: `× (1 − u(p,d))`. Die echten Kosten `ü(p,d)` werden nach dem Schattenanteil der Projekte von p an d verteilt und erscheinen als eigene Zeile „Überschreitung (bezahlt)“. So zählt nichts doppelt.
 - Grenze: Die Quellen liefern Tageswerte, das Kontingent läuft in 5-Stunden- und Wochenfenstern. Die Zuordnung zu Projekten ist daher eine anteilige Näherung.
-- Ohne Abgleich (Free, Team ohne CSV): kein Abzug, Hinweis „Überschreitung nicht abgezogen“ im Bericht.
+- Ohne Abgleich (kein Analytics-Key, Team ohne CSV): kein Abzug, Hinweis „Überschreitung nicht abgezogen“ im Bericht.
 
 **Team, Enterprise und Pilot im Vergleich:**
 
@@ -222,7 +224,7 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 - **Projektpreis:** `PP_P = schatten_faktor · S_P + A_P + Ü_P` (USD), dann mal `kurs(M)` in EUR. Standard `schatten_faktor = 1,0` laut Entscheidung.
 - Nutzungsbasiertes Enterprise: `S_P` ersetzt durch die echten Kosten (`amount` aus `user_cost_report`, verteilt wie Ü) oder Schatten × Vertragsrabatt.
 - Der Monatsabschluss friert die Werte ein. Spätere Preis- oder Datenänderungen wirken nur auf offene Monate.
-- **Budget (ee):** Verbrauch `V_P(t)`, Prognose zum Monatsende `V_P(t) / w_t · w_M` (w = vergangene bzw. gesamte Arbeitstage). Alarm je Schwelle einmal (50/80/100 % von Verbrauch oder Prognose), Kanäle E-Mail und Webhook.
+- **Budget:** Verbrauch `V_P(t)`, Prognose zum Monatsende `V_P(t) / w_t · w_M` (w = vergangene bzw. gesamte Arbeitstage). Alarm je Schwelle einmal (50/80/100 % von Verbrauch oder Prognose), Kanäle E-Mail und Webhook.
 
 **Beispiel** (Listenpreise vom 2026-10-22 in USD je MTok; Opus 5.5: input 4, output 20, cache read 0,20, cache write 1h 8. Sonnet 5.5: 2, 10, 0,10, 4. Team-Premium jährlich 100 $/Monat, Team-Standard jährlich 20 $/Monat; Kurs 0,86 € je $ als Beispielwert.)
 
@@ -241,10 +243,10 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 ## 6. Mandantenfähigkeit und Zugang
 
 - **Ingest-Token:** Mandanten-Token für Quelle A (statischer Header in den Managed Settings, für alle Mitarbeitenden lesbar) oder Rechner-Token. Das Rechner-Token gilt für Quelle B und optional über `otelHeadersHelper = seatmeter-agent otel-headers` auch für Quelle A, ist an Rechner und Person gebunden, einzeln widerrufbar und kommt aus dem Schlüsselbund. Tokens werden nur einmal angezeigt. Präfixe `smi_`/`smr_`, damit Secret-Scanner sie erkennen.
-- Fälschungsschutz: Mit dem Mandanten-Token kann jemand Nutzung für andere erfinden. Gegenmittel: Rechner-Token über den Helper, Plausibilität Person ↔ Rechner, Abgleich (ee).
+- Fälschungsschutz: Mit dem Mandanten-Token kann jemand Nutzung für andere erfinden. Gegenmittel: Rechner-Token über den Helper, Plausibilität Person ↔ Rechner, Abgleich.
 - **Dashboard-Login:**
   - Free: lokaler Admin (argon2id). Erstanmeldung über ein Einrichtungs-Token aus dem Server-Log; weitere lokale Konten mit Rollen.
-  - ee: OIDC (Authelia als Referenz, Gruppen-Claim → Rolle); zusätzlich Proxy-Header-Modus hinter vertrauenswürdigem Proxy.
+  - OIDC (Kern seit 2026-10-24): globaler Anbieter des Betreibers (Authelia als Referenz, Gruppen-Claim → Rolle) und SSO je Mandant, dazu SCIM; zusätzlich Proxy-Header-Modus hinter vertrauenswürdigem Proxy.
   - Betrieb bei weeberwrk: Phase 1–3 Caddy `forward_auth` (Authelia) als äußeres Tor plus lokaler Admin; ab Phase 4 OIDC-Client `seatmeter` in Authelia, lokaler Admin nur noch für Notfälle.
 - **Rollen:**
 
@@ -257,6 +259,7 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 | Betriebsrat | Betriebsrats-Bericht, Konfiguration, Zugriffsprotokoll, Aggregate ohne Personen |
 
 - Mandantentrennung: RLS plus Tests („Mandant A sieht nichts von B“) in jeder Pipeline. Die Free-Edition nutzt dasselbe Schema mit einem einzigen Mandanten.
+- **Mandantenfähigkeit (ee):** Plattform-Admin, Mandanten anlegen, ändern und löschen, Kontenkontingent und Plattform-Protokoll. Sie hängt sich über `AuthErweiterung` in die Kern-Verwaltung (`/api/v1/mandant/…`) ein: Plattform-Admins verwalten jeden Mandanten mit `?mandant=<id>` (`mandantVerwalten`), sind in der Kontenverwaltung geschützt (`plattformAdmins`), kommen auf Wunsch aus OIDC-Gruppen (`plattformAdminAbgleichen`); das Kontingent prüft `kontingentPruefen`/`kontingentStand`. Ohne ee gibt es weder Plattform-Admins noch Kontingent.
 
 ## 7. Datenschutz-Standards und Betriebsrats-Bericht
 
@@ -291,18 +294,20 @@ seatmeter/                      pnpm workspaces, Node 24 LTS, TypeScript strict
 ├─ NOTICE                       Drittanbieter-Hinweise (CCAM MIT, falls Code übernommen; opentelemetry-proto)
 ├─ packages/
 │  ├─ shared/                   zod-Schemas, Typen, Preislogik, Repo-URL-Normalisierung, HMAC-Helfer
-│  ├─ server/                   Fastify, OTLP, Agent-Ingest, Jobs, Migrationen, Plugin-Schnittstelle
+│  ├─ server/                   Fastify, OTLP, Agent-Ingest, Jobs, Migrationen, Plugin-Schnittstelle,
+│  │                            Budgets/Alarme/Hinweise, Abgleich, Jira, OIDC/SSO, Konten, SCIM
 │  ├─ web/                      React/Vite-Dashboard
 │  └─ agent/                    CLI, Hooks, Transkript-Zähler, Sweeper-Vorlagen (launchd/systemd/Task)
 ├─ ee/
-│  ├─ LICENSE                   weeberwrk-Lizenz (Text noch offen)
-│  ├─ server/                   Mandanten, OIDC/Proxy-Auth, Budgets/Alarme/Hinweise, Abgleich
-│  └─ web/                      ee-Seiten
+│  ├─ LICENSE                   weeberwrk-Lizenz (Entwurf)
+│  ├─ server/                   Mandantenfähigkeit: Lizenz, Plattform-Admin, Mandanten, Kontingent
+│  └─ web/                      Plattform-Bereich (Mandanten, Lizenz, Protokoll)
 ├─ deploy/                      compose.yml, compose.dev.yml, Caddy-Schnipsel, Gatus-Beispiel, Backup-Skript
 └─ docs/                        Betrieb, Ausrollen, Betriebsrats-Vorlage, Entscheidungen
 ```
 
-- Grenze: `packages/*` importiert nie aus `ee/` (ESLint `no-restricted-imports`, CI-Prüfung). `ee` registriert sich als `SeatmeterPlugin`. Das Server-Image enthält `ee/`, aktiv nur mit Lizenzschlüssel (signierte Datei, Ed25519; Prüfung erst vor dem öffentlichen Release nötig).
+- Grenze: `packages/*` importiert nie aus `ee/` (ESLint `no-restricted-imports`, CI-Prüfung). `ee` registriert sich als `SeatmeterPlugin`. Das Standard-Image (`runtime`) enthält alles außer der Mandantenfähigkeit; das Ziel `runtime-ee` bringt das ee-Plugin und die Seiten des Plattform-Bereichs mit, aktiv nur mit Lizenzschlüssel (signierte Datei, Ed25519).
+- **Open Core (Stand 2026-10-24, Abschnitt 0):** Kern (Apache-2.0): Ingest, Kalkulation, Berichte, Ausrollen, Budgets und Alarme, Projekt-Hinweise, Abgleich, Jira, OIDC/SSO (global und je Mandant), Domains, Konten und Einladungen, SCIM, Selbstverwaltung des Mandanten. ee (weeberwrk-Lizenz): nur die Mandantenfähigkeit (Plattform-Admin, Mandanten anlegen/ändern/löschen, Kontenkontingent, Plattform-Protokoll, Lizenzprüfung, Plattform-Bereich). Lizenzmodul ist nur noch `mandanten`; ältere Lizenzdateien mit `oidc`, `budgets` oder `abgleich` bleiben gültig, die weiteren Einträge wirken nicht. Das Lizenz-Tor (402 `lizenz_fehlt`) gibt es nur auf den ee-Routen `/api/v1/ee/…`.
 - Werkzeuge nur in Docker: `compose.dev.yml` mit `node:24-bookworm-slim` (corepack/pnpm) und `postgres:18`. `docker compose -f deploy/compose.dev.yml run --rm dev pnpm …` für lint (ESLint, Prettier), typecheck (tsc), test (Vitest gegen echte Postgres im Compose-Netz) und build. Später Playwright für das Dashboard.
 - CI: Forgejo Actions mit denselben Containern. Release-Tag `vX.Y.Z` baut die Images (Forgejo Container Registry) und die Agent-Binaries (Release-Assets).
 - Tests mit Pflicht: Golden-Test Kalkulation (Beispiel aus 5), Dedup A/B, Allowlist (Inhalte nie gespeichert), Repo-URL-Normalisierung, RLS-Trennung, Pseudonymisierung (kein Klartext in der DB: Volltextsuche nach Test-E-Mail im Dump).
@@ -409,6 +414,8 @@ Kette: 1 → (2 ∥ 3) → 4 → 5, gesamt etwa **8 h** Agentenzeit plus CI-Wart
 | 3 Kalkulation + Budgets | Preistabelle mit Gültigkeit und Seed (offizielle Preise), Sitzkosten und Sitzliste, drei Verteilvarianten, Kurs, Monatsabschluss, Projektpreis-Seite, CSV-Export; Budgets/Prognose/Alarme (ee-Teil) | 1,25 h | 3 (Preise/Kalkulation, Web, Budgets) | Golden-Test reproduziert das Beispiel aus 5 auf den Cent; Preisänderung mit `gueltig_ab` lässt abgeschlossene Monate unverändert; jede Schwelle alarmiert genau einmal |
 | 4 ee | Mehrmandanten (Plattform-Admin, Mandanten-UI), OIDC gegen Authelia + Gruppen→Rollen, Proxy-Header-Modus, Abgleich (Analytics-API-Client, Team-CSV-Import, Überschreitungsabzug), Lizenzgrenze in CI | 2,0 h | 4 (Mandanten/RLS, OIDC, Abgleich, Web) | RLS-Tests: Mandant A liest nichts von B; Login per Passkey über Authelia, Rollen greifen; Abgleich mit Doku-Fixtures (kein Live-Enterprise vorhanden), Abzugsformel per Test; `packages/*` ohne ee-Importe |
 | 5 Ausroll-Paket + Pilot | Schnipsel-Generator im Dashboard, Installer (macOS/Linux/Windows-Skript), Start-Wrapper mit Pfadprüfung, Betriebsrats-Vorlage, Doku; Pilot auf beiden Macs | 1,0 h + 7 Tage Laufzeit | 2 (Paket/Doku, Pilot-Einrichtung) | Neuer Mac in < 10 min eingerichtet; nach 7 Tagen Abdeckung A/B ≥ 99 %, „unzugeordnet“ < 5 %; keine Daten aus arbeit/meyer/privat (Projektliste und Agent-Log prüfen); Monatsbericht für zwei weeberwrk-Repos plausibel; Daniel nimmt ab |
+
+Stand 2026-10-24: Budgets/Prognose/Alarme (Phase 3) sowie OIDC und Abgleich (Phase 4) sind Kern; von Phase 4 bleibt nur die Mandantenfähigkeit in `ee/` (Abschnitt 0, „Open Core“).
 
 Daniels Schritte: Fragen in der JSON-Zusammenfassung beantworten; im Pilot einmal den Wrapper aktivieren (Shell neu laden) und den Freigabedialog bestätigen, falls er erscheint. DNS, Authelia-Client, Caddy und Gatus erledigt Claude.
 
@@ -557,9 +564,11 @@ Verträge: `packages/agent/README.md` und `packages/server/src/merge/README.md`.
 
 - **Web-Plugins (Abweichung von 8):** `SeatmeterWebPlugin<Seite, Kachel>` (`shared/navigation.ts`) liefert außer der Navigation Seiten je Pfad (`seiten`, auch Pfade ohne Navigationseintrag wie `/budgets/:id`) und Kacheln für die Übersicht (`uebersichtKacheln`, bekommen den Monat). Das Dashboard lädt Plugins **beim Bauen**: `SEATMETER_WEB_PLUGINS=<paket,…>` füllt das virtuelle Modul `virtual:seatmeter-web-plugins` (`packages/web/web-plugins.ts`; Paket im pnpm-Workspace, Quelle aus dem Feld `source` der package.json). Ohne Variable ist die Liste leer, der Kern-Quelltext nennt kein ee-Paket. Tailwind scannt nur `packages/web`; das Vite-Plugin ergänzt deshalb je Plugin-Ordner eine `@source`-Zeile in `src/index.css`.
 - **ee/web** ist ein React-Paket ohne eigenes Bündel (Quelltext, gebaut mit dem Dashboard), nutzt Kern-Bausteine über `@seatmeter/web/bibliothek` und Testhilfen über `@seatmeter/web/test` und hat ein eigenes Vitest-Projekt `ee-web`. Typprüfung mit `tsc -p ee/web` (nicht mehr im `tsc -b`-Verbund).
-- **ee-Image (Abweichung von 8, „Server-Image enthält ee/“):** Das Standard-Image bleibt reiner Kern; das Ziel `runtime-ee` enthält Server mit ee-Plugin und Dashboard mit ee-Seiten (`deploy/README.md`, „Lizenz und ee-Image“). Der Pilot baut `runtime-ee`.
+- **ee-Image (Abweichung von 8, „Server-Image enthält ee/“):** Das Standard-Image bleibt reiner Kern; das Ziel `runtime-ee` enthält Server mit ee-Plugin und Dashboard mit ee-Seiten (`deploy/README.md`, „Lizenz und ee-Image“). Der Pilot baut `runtime-ee`. Seit 2026-10-24 enthält schon das Standard-Image alles außer der Mandantenfähigkeit.
 
 **Phase 4a „ee: Mandanten, OIDC, Lizenz“ (2026-10-22, `ee/server/README.md`):**
+
+- **Umzug 2026-10-24:** OIDC ist Kern-Modul `oidc` (`packages/server/src/oidc`, Variablen `SEATMETER_OIDC_*` in der Kern-Konfiguration, ohne Lizenz); Lizenzmodul nur noch `mandanten`. Plattform-Admin, Mandanten, Plattform-Protokoll und Lizenz bleiben ee. Die Mandanten-Tokens, Orgs und Rollen eines Mandanten verwaltet der Kern unter `/api/v1/mandant/{tokens,anthropic-orgs,rollen}`.
 
 - **Lizenz (8):** Datei `seatmeter-lizenz/1` mit Ed25519-Signatur über das kanonische JSON; gebunden an die Installation über `mandant_slug` (gilt nur, wenn der Mandant existiert) oder `plattform: true`. Module `mandanten`, `oidc`, `budgets`, `abgleich`; Prüfung beim Start und alle 10 Minuten; 14 Tage Kulanz nach `gueltig_bis` mit Warnung in `/me` (`ee`-Block) und Banner. Ohne Lizenz antworten die ee-Routen mit 402 `{ code: 'lizenz_fehlt' }`, Jobs werden übersprungen. Der Lizenzstatus selbst (`GET /api/v1/ee/lizenz`) bleibt erreichbar. Privater Schlüssel nur im Schlüsselbund von weeberwrk, nie im Repo.
 - **Plattform-Admin (6):** eigene Tabelle `plattform_admin` (ee-Migration, ohne RLS wie `benutzer`) statt `rolle` mit leerem Mandanten, weil `rolle` per RLS an einen Mandanten gebunden bleibt. Ein Plattform-Admin sieht jeden Mandanten in der Mandantenwahl mit der Rolle `controller` (aggregiert, keine Personensichten, Personen-Support-Zugang mit Freigabe offen) und verwaltet Mandanten über `/api/v1/ee/mandanten*`; Zugriffe auf fremde Mandanten stehen in deren Audit. Mandanten sperren ist noch nicht umgesetzt.
@@ -568,13 +577,15 @@ Verträge: `packages/agent/README.md` und `packages/server/src/merge/README.md`.
 - **Auth-Erweiterungspunkte im Kern:** `AuthProvider.anmeldeLink` und `GET /api/v1/auth/anbieter` (Anmeldeseite), `AuthErweiterung` (`zusatzRollen`, `me`). Der Kern kennt weiterhin kein ee-Paket.
 - **Pilot:** Lizenz für Mandant `weeberwrk` bis 2027-12-31 mit allen Modulen; Authelia-Client `seatmeter` (Policy `nur_admins`, Gruppen im ID-Token), Gruppe `admins` → Mandanten-Admin `weeberwrk` und Plattform-Admin. Passkey-Anmeldung per OIDC prüft Daniel.
 
-**Phase 4b „ee: Budgets, Hinweise, Abgleich“ (2026-10-22, `ee/server/README.md`):**
+**Phase 4b „ee: Budgets, Hinweise, Abgleich“ (2026-10-22, heute `packages/server/src/{budgets,hinweise,abgleich}/README.md`):**
+
+- **Umzug 2026-10-24:** Budgets, Hinweise und Abgleich sind Kern-Module ohne Lizenzprüfung, Routen ohne `/ee/` (`/api/v1/budgets`, `/api/v1/alarme`, `/api/v1/alarmkanal`, `/api/v1/hinweise`, `/api/v1/abgleich`, `/api/v1/jobs/{budgets/pruefen,hinweise/erzeugen}`); die Jobs laufen im Job-Planer des Kerns. Die Tabellen der ee-Migration 0002 legt die Kern-Migration `2026_10_24_0022_budgets_hinweise` an (idempotent, Name `ee_einstellung` bleibt).
 
 - **Datenmodell:** Kern-Migration 0014 ergänzt Kern-Tabellen: `budget.projekt_id` nullbar (= mandantenweit), `bezeichnung`, `ausloeser` (verbrauch, prognose), `aktiv`; `alarm` mit `prozent`, `betrag`, `prognose` und Zustellung (`zustellung`, `zustellversuche`, `zustellfehler`, `zugestellt`, `quittiert_von`); `person.key_konto_id` = HMAC(`user.account_id`) als zweite Zuordnung für `actor.user_id` (der Ingest füllt sie aus Quelle A; `key_konto` bleibt HMAC(account_uuid)); `mandant_geheimnis.analytics_key_geaendert`; `abgleich_lauf` mit `quelle`, `ausloeser`, `zeilen`, `fehler`. ee-Migration 0002: `alarm_kanal`, `hinweis`, `ee_einstellung` (RLS wie im Grundschema).
 - **Budget (5):** Verbrauch aus der Live-Kalkulation (Projektpreis EUR/USD oder Tokens), Prognose über Arbeitstage Mo–Fr; Alarm je (Budget, Monat, Schwelle) genau einmal, gemessen am Verbrauch (Standard) oder an der Prognose (`ausloeser`). Kanäle Webhook, SMTP und die Vorlage `weeberwrk-relay`; keine Entwarnungen, quittiert = still.
 - **Hinweise (0):** Lizenzmodul `budgets` (kein eigenes); Regeln als Anteile am Schattenpreis mit Mindestbetrag 5 $; Cache-Schreibanteil als Schatten nur der `cache_write`-Tokens (Näherung ohne Langkontext).
 - **Abgleich (2.6, verifiziert gegen die Doku am 2026-10-22):** Die Endpunkte heißen wie angenommen; der Key ist ein eigener Analytics-Key (`read:analytics`, kein Admin-Key, nur Primary Owner, nur Enterprise, nicht Team); Beträge sind Cent-Strings; `starting_at`/`ending_at` RFC 3339, höchstens 31 Tage je Abruf; Paging über `next_page`, 410 bei abgelaufenem Cursor; 60 Anfragen/min je Org. Auf sitzbasierten Enterprise-Plänen bilden die Reports laut Doku nur Usage Credits ab, die ±3-%-Abweichung gegen `tag_aggregat` ist dort also erwartbar groß (nicht verifiziert). Tagesgrenzen der API sind UTC, das Tagesaggregat nutzt die Mandanten-Zeitzone.
-- **Abzug (4):** unverändert in `berechneProjektpreise`/`kalkuliereMonat` (Phase 3); ee schreibt nur `ueberschreitung`. Ein API-Test rechnet das Beispiel im Testkopf (`ee/server/test/abgleich.test.ts`) auf den Cent nach.
+- **Abzug (4):** unverändert in `berechneProjektpreise`/`kalkuliereMonat` (Phase 3); ee schreibt nur `ueberschreitung`. Ein API-Test rechnet das Beispiel im Testkopf (heute `packages/server/test/abgleich.test.ts`) auf den Cent nach.
 
 **Phase 5 „Ausroll-Paket + Pilot eigene Org“ (2026-10-22):**
 
@@ -601,13 +612,15 @@ Verträge: `packages/agent/README.md` und `packages/server/src/merge/README.md`.
 **Navigation nach Rollen (2026-10-23, Entscheidung Daniel):**
 
 - **Datenmodell:** `NavEintrag.gruppe` ist Pflicht: `auswertung` | `einrichtung` | `plattform` (`shared/navigation.ts` mit `NAV_GRUPPEN`, `PLATTFORM_PFAD`, `istPlattformPfad`). Kern-Einträge stehen in `packages/web/src/navigation.ts`, Plugin-Einträge im Feld `navigation` des Web-Plugins (ee: `ee/web/src/index.tsx`). Einträge und Seiten der Gruppe `plattform` liegen immer unter `/plattform/…` und bekommen das Plattform-Layout; alle anderen Seiten die Seitenleiste.
-- **Sichtbarkeit aus `/me`:** Rollen im aktiven Mandanten (`rollen`) und `plattform_admin` aus der ee-`AuthErweiterung.me` (gab es schon, kein Server-Umbau). Ohne Auth-Modul im Server bleibt die Einrichtung sichtbar wie bisher. Die Rolle steuert die Navigation; Einrichtungsseiten bleiben per Pfad erreichbar (Lesen erlaubt der Server wie bisher, Schreiben prüft `requireRolle`). Der Plattform-Bereich zeigt Nicht-Plattform-Admins nur einen Hinweis, der Server prüft `nurPlattform`. `VITE_SEATMETER_EE` steuert weiter nur die ee-Platzhalter beim Bauen.
+- **Sichtbarkeit aus `/me`:** Rollen im aktiven Mandanten (`rollen`) und `plattform_admin` aus der ee-`AuthErweiterung.me` (gab es schon, kein Server-Umbau). Ohne Auth-Modul im Server bleibt die Einrichtung sichtbar wie bisher. Die Rolle steuert die Navigation; Einrichtungsseiten bleiben per Pfad erreichbar (Lesen erlaubt der Server wie bisher, Schreiben prüft `requireRolle`). Der Plattform-Bereich zeigt Nicht-Plattform-Admins nur einen Hinweis, der Server prüft `nurPlattform`. `VITE_SEATMETER_EE`, die ee-Platzhalter (`EE_NAVIGATION`) und der Schalter `mitEe` entfallen seit 2026-10-24: alle Einrichtungsseiten sind Kern-Einträge, das ee-Plugin bringt nur den Plattform-Bereich mit (`SEATMETER_WEB_PLUGINS=@seatmeter/ee-web`).
 - **Umleitungen:** `/mandanten` → `/plattform/mandanten`, `/mandanten/:id` → `/plattform/mandanten/:id`, `/lizenz` → `/plattform/lizenz` (`UMLEITUNGEN` in `packages/web/src/navigation.ts`, Suchparameter bleiben), damit alte Doku-Links weiter funktionieren.
-- **Tokens und Orgs (`/mandant`, Einrichtung, ee):** Ergänzung zur Liste vom 2026-10-23: Die Detailseite des eigenen Mandanten (Mandanten-Tokens, Org-Positivliste, Rollen) bleibt für Mandanten-Admins erreichbar, weil „Mandanten“ jetzt nur im Plattform-Bereich steht. Die Rollen ziehen voraussichtlich in „SSO und Konten“ um.
+- **Tokens und Orgs (`/mandant`, Einrichtung; seit 2026-10-24 Kern-Seite über `/api/v1/mandant/{tokens,anthropic-orgs,rollen}`):** Ergänzung zur Liste vom 2026-10-23: Die Detailseite des eigenen Mandanten (Mandanten-Tokens, Org-Positivliste, Rollen) bleibt für Mandanten-Admins erreichbar, weil „Mandanten“ jetzt nur im Plattform-Bereich steht. Die Rollen ziehen voraussichtlich in „SSO und Konten“ um.
 - **Plattform-Protokoll:** eigene Seite `/plattform/protokoll` (`GET /api/v1/ee/plattform-audit?limit=`, Auswahl 50/100/500) mit Zeit, Benutzer, Aktion, Mandant und Details; nach „Mandant löschen“ landet der Plattform-Admin dort. Die Seite „Mandanten“ zeigt das Protokoll nicht mehr.
 - **Kopfzeile:** Mandantenwechsel über `POST /api/v1/auth/mandant` (Auswahl ab zwei Mandanten in `/me`), danach laden alle Abfragen neu; Abmelden steht jetzt in der Kopfzeile statt am Ende der Seitenleiste.
 
 **Phase 5a: SSO je Mandant (2026-10-23, Entscheidungen Daniel):**
+
+- **Umzug 2026-10-24:** SSO je Mandant, Domains, Konten, Einladungen und die Selbstverwaltung sind Kern (Module `oidc`, `konten`, `mandant`), Routen unter `/api/v1/mandant/{oidc,domains,konten,…}` für den aktiven Mandanten oder `?mandant=<id>`; die Tabellen der ee-Migration 0004 legt die Kern-Migration `2026_10_24_0023_sso_je_mandant` an. Das Kontenkontingent bleibt ee und hängt sich über `AuthErweiterung.kontingentPruefen`/`kontingentStand` ein (ersetzt `kontoZulassen`); Plattform-Admins über `plattformAdmins` und `mandantVerwalten`.
 
 - **Ein Host, E-Mail zuerst:** Die Anmeldeseite fragt die E-Mail-Adresse; `GET /api/v1/auth/anbieter?email=` (Kern) fragt über den neuen Haken `AuthProvider.anmeldeZiel` die Plugins (ee: verifizierte Domain → Mandant → aktive `mandant_oidc`) und liefert `oidc: { bezeichnung, start_url }` oder `null`, `?mandant=<slug>` dasselbe über das Kürzel. Keine Aussage über Konten, Ratenlimit je IP (Token-Bucket aus `ingest-gemeinsam/ratenlimit.ts`). Keine Subdomains je Mandant; der globale Anbieter (`SEATMETER_OIDC_*`) bleibt für den Betreiber.
 - **Datenmodell:** Kern-Migration 0019: `benutzer.oidc_issuer` (eindeutig ist jetzt das Paar Issuer + `oidc_sub`, Index `benutzer_oidc_subjekt_idx`; die alte Eindeutigkeit von `oidc_sub` allein entfällt), `benutzer.zuletzt_angemeldet`, `mandant.konten_max`. ee-Migration 0004: `mandant_oidc`, `mandant_domain` (Domain serverweit eindeutig), `konto_einladung`, alle mit RLS. Mandantenfrei liest die Eigentümer-Verbindung nur Zuordnungen (Domain → Mandant, Einladungs-Token → Konto, IDs mit eigenem Anmeldedienst).
@@ -618,6 +631,8 @@ Verträge: `packages/agent/README.md` und `packages/server/src/merge/README.md`.
 - **Offen:** Discovery ruft vom Mandanten eingetragene https-URLs ab (SSRF auf interne https-Ziele nicht ausgeschlossen, nur Loopback-http für Tests); SAML 2.0 später (eigenes Issue).
 
 **Phase 5c: Jira je Mandant (2026-10-23, Entscheidung Daniel 2026-10-23):**
+
+- **Umzug 2026-10-24:** Die unten mit „ee:“ markierten Jira-Teile sind Kern-Modul `jira` ohne Lizenzmodul, Routen `/api/v1/jira/…`, Tabellen in der Kern-Migration `2026_10_24_0025_jira`, `SEATMETER_JIRA_INTERN_ERLAUBT` in der Kern-Konfiguration; „Jira“ und „Jira-Kosten“ sind Kern-Seiten.
 
 - **Grundsatz:** Kosten je Jira-Projekt und je Jira-Issue; Sitzungen werden Issues über den **Issue-Schlüssel** zugeordnet. Branch-Namen verlassen den Rechner weiterhin nie; gesendet und gespeichert wird nur der Schlüssel (Muster `[A-Z][A-Z0-9]+-[0-9]+`, Erkennung ohne Rücksicht auf Groß-/Kleinschreibung, gespeichert groß, höchstens 20 je Anfrage; übliche Branch-Präfixe `release`, `hotfix`, `bugfix`, `feature`, `fix`, `chore` zählen nicht als Projekt). Gemeinsame Erkennung in `packages/shared/src/issue-schluessel.ts`. Kein Rückschreiben nach Jira.
 - **Quelle B (Agent 0.1.3):** Der JSON-Reviver liest aus `gitBranch` nur die Schlüssel und verwirft das Feld wie bisher. Jede Anfrage trägt die Schlüssel ihrer Transkriptzeile (`issue_schluessel` im `agentAnfrageSchema`, optional; `[]` = Branch ohne Schlüssel, fehlt = Branch unbekannt bzw. alter Agent). Das ist genauer als eine Verteilung je Sitzung: Wechselt der Branch in einer Sitzung, zählt jede Anfrage zum Branch ihrer Zeile. **Näherung:** Eine Anfrage mit mehreren Schlüsseln (`ABC-1/ABC-2`) zählt zu gleichen Teilen (Tokens und Schattenpreis ganzzahlig geteilt, Rest an die ersten Schlüssel). Vor 0.1.3 gesendete Anfragen bleiben ohne Schlüssel (kein Nachsenden, der Fingerabdruck einer Zeile ändert sich nicht).
@@ -633,8 +648,18 @@ Verträge: `packages/agent/README.md` und `packages/server/src/merge/README.md`.
 
 **Phase 5b: SCIM (2026-10-23):**
 
+- **Umzug 2026-10-24:** Kern-Modul `scim` ohne Lizenzprüfung (`/scim/v2` unverändert, Token-Verwaltung unter `/api/v1/mandant/scim-tokens`); die Tabellen der ee-Migration 0005 legt die Kern-Migration `2026_10_24_0024_scim` an. Das Kontenkontingent prüft die Mandantenfähigkeit (ee).
+
 - **Endpunkt:** SCIM 2.0 unter `/scim/v2` (ee-Modul `scim`, Lizenzmodul `mandanten`), Bearer-Token je Mandant (`mandant_scim_token`, nur SHA-256, Klartext einmal, widerrufbar). Users, Groups, ServiceProviderConfig, Schemas, ResourceTypes; Filter-Parser ohne Bibliothek (RFC 7644 §3.4.2.2, Auswertung im Speicher je Mandant), PATCH nach §3.5.2 inklusive der Eigenheiten von Entra ID (Operationen großgeschrieben, Booleans als Zeichenketten, Pfadfilter) und Okta (PUT, Wertobjekte mit `id`). Fehler im SCIM-Fehlerformat, `application/scim+json`.
 - **Datenmodell:** ee-Migration 0005 (`mandant_scim_token`, `scim_konto`, `mandant_scim_gruppe`, `mandant_scim_mitglied`, alle RLS), Kern-Migration 0021 (`rolle.quelle` + `scim`). Gespeichert werden je Konto nur `userName` (= `benutzer.benutzername`), `externalId` und `active`; alle anderen Attribute werden verworfen (Datensparsamkeit).
 - **Rollen:** dieselbe Zuordnung Gruppen → Rollen wie OIDC je Mandant (`mandant_oidc.gruppen_rollen`, Schlüssel `displayName` oder `externalId`), Rollen mit `quelle = 'scim'`, Abgleich je betroffenem Konto bei jeder Änderung; Kontenkontingent bei der ersten Rolle (409 `tooMany`, ganze Anfrage zurückgerollt).
 - **Sperren über Mandantengrenzen:** `benutzer.deaktiviert` gilt mandantenübergreifend; deshalb sperrt `active = false` global nur Konten ohne Rollen in anderen Mandanten, sonst entzieht es Rollen und Sitzungen des Mandanten. SCIM übernimmt keine Konten, die schon Rollen in anderen Mandanten haben, und benennt solche Konten nicht um.
 - **Web:** Abschnitt SCIM auf „SSO und Konten“ (Basis-URL, Token einmal sichtbar, Widerruf, letzte Synchronisation, Zähler). Anleitung Entra ID und Okta: `docs/SSO-und-SCIM.md` Teil 2.
+
+**Umzug in den Kern (2026-10-24, Festlegung Daniel 2026-10-23, Abschnitt 0):**
+
+- **Ergebnis:** `ee/` = Mandantenfähigkeit (Lizenz, Plattform-Admin, Mandanten anlegen/ändern/löschen, Kontenkontingent, Plattform-Protokoll, Plattform-Bereich im Dashboard). Kern-Module neu: `budgets`, `hinweise`, `abgleich`, `jira`, `oidc`, `konten`, `scim`; die Selbstverwaltung eines Mandanten liegt im Modul `mandant` (`verwaltung.ts`, `verwaltung-routen.ts`). Der Kern läuft ohne Plugin und ohne Lizenz vollständig (eigene Tests ohne Plugin, Open-Source-Export ohne `ee/` baut und testet grün).
+- **Pfade:** Die API-Routen der umgezogenen Module haben kein `/ee/` mehr. Die Selbstverwaltung liegt unter `/api/v1/mandant/{oidc,domains,konten,scim-tokens,rollen,tokens,anthropic-orgs,benutzer}` neben `/api/v1/mandant/einstellungen`; Ziel ist der aktive Mandant der Sitzung oder `?mandant=<id>`. `/scim/v2`, `/api/v1/auth/oidc/*` und `/api/v1/auth/einladung*` bleiben. ee behält `/api/v1/ee/{mandanten,mandanten/:id,plattform-audit,benutzer,lizenz}`; nur dort gibt es das Lizenz-Tor.
+- **Haken in `AuthErweiterung`:** `zusatzRollen`, `me`, dazu neu `plattformAdmins`, `mandantVerwalten`, `plattformAdminAbgleichen`, `kontingentPruefen` und `kontingentStand` (ersetzt `kontoZulassen`); der Kern fasst sie in `mandant/verwaltung.ts` zusammen.
+- **Migrationen:** Kern `2026_10_24_0022_budgets_hinweise`, `…_0023_sso_je_mandant`, `…_0024_scim`, `…_0025_jira`, vollständig idempotent (`IF NOT EXISTS`, Richtlinie `mandant_trennung` nur, wenn sie fehlt, Rechte); die ee-Migrationen 0002, 0004, 0005 und 0006 bleiben als leere Platzhalter registriert (`kysely_migration_ee`). Tabellennamen unverändert. Aktualisierung ohne Handgriff (`deploy/README.md`, „Aktualisierung von Ständen vor 2026-10-24“), geprüft in `packages/server/test/migration-umzug.test.ts` und `ee/server/test/migration-umzug.test.ts` (Schema nach Aktualisierung gleich einer frischen Installation).
+- **Web:** Alle Einrichtungs- und Auswertungsseiten sind Kern (`packages/web/src/seiten/`); `ee/web` liefert nur `/plattform/mandanten`, `/plattform/mandanten/:id`, `/plattform/lizenz` und `/plattform/protokoll` und nutzt dafür Kern-Bausteine (`MandantTokens`, `MandantOrgs`, `MandantRollen`).

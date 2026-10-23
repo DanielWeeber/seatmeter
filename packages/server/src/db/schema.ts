@@ -513,6 +513,41 @@ export interface MandantScimMitgliedTabelle {
   benutzer_id: string;
 }
 
+/** Jira-Verbindung je Mandant (Migration 0025). */
+export interface MandantJiraTabelle {
+  mandant_id: string;
+  basis_url: string;
+  art: 'cloud' | 'datacenter';
+  benutzer_email: string | null;
+  /** AES-256-GCM, AAD `mandant_jira.token`; nie in Antworten oder Logs. */
+  token: Buffer;
+  aktiv: ColumnType<boolean, boolean | undefined, boolean>;
+  nur_zugeordnete: ColumnType<boolean, boolean | undefined, boolean>;
+  zuletzt_geprueft: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  fehler: string | null;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+  geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+/** Zuordnung seatmeter-Projekt → Jira-Projekt (Migration 0025). */
+export interface ProjektJiraTabelle {
+  mandant_id: string;
+  projekt_id: string;
+  jira_projekt_schluessel: string;
+  jira_projekt_name: string | null;
+  geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+/** Titel und Status je Jira-Issue, 24 h gültig (Migration 0025). */
+export interface JiraIssueCacheTabelle {
+  mandant_id: string;
+  schluessel: string;
+  titel: string | null;
+  status: string | null;
+  gefunden: ColumnType<boolean, boolean | undefined, boolean>;
+  geholt: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
 export interface BenutzerTabelle {
   id: Id;
   benutzername: string;
@@ -638,6 +673,9 @@ export interface Datenbank {
   alarm_kanal: AlarmKanalTabelle;
   hinweis: HinweisTabelle;
   ee_einstellung: EeEinstellungTabelle;
+  mandant_jira: MandantJiraTabelle;
+  projekt_jira: ProjektJiraTabelle;
+  jira_issue_cache: JiraIssueCacheTabelle;
   mandant_oidc: MandantOidcTabelle;
   mandant_domain: MandantDomainTabelle;
   konto_einladung: KontoEinladungTabelle;

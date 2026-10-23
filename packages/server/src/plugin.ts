@@ -48,7 +48,7 @@ export interface AuthProvider {
    */
   anmeldeLink?(ctx: PluginKontext): AnmeldeLink | null;
   /**
-   * Optional (ee: SSO je Mandant): Anmeldedienst für eine E-Mail-Adresse (verifizierte Domain → Mandant)
+   * Optional (Modul oidc: SSO je Mandant): Anmeldedienst für eine E-Mail-Adresse (verifizierte Domain → Mandant)
    * bzw. ein Mandanten-Kürzel; `null`, wenn keiner zuständig ist. Grundlage von
    * `GET /api/v1/auth/anbieter?email=…|?mandant=…`. Darf nie verraten, ob ein Konto existiert.
    */

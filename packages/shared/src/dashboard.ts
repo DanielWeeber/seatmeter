@@ -200,7 +200,7 @@ export interface AuthAnbieter {
     start: string | null;
   }[];
   /**
-   * Nur bei `?email=` bzw. `?mandant=` (ee, SSO je Mandant): Anmeldedienst des Mandanten, wenn die
+   * Nur bei `?email=` bzw. `?mandant=` (SSO je Mandant): Anmeldedienst des Mandanten, wenn die
    * Domain der Adresse verifiziert ist bzw. der Mandant (Kürzel) eine aktive OIDC-Konfiguration hat,
    * sonst `null`. Verrät nie, ob ein Konto existiert (nur Domain → Mandant).
    */

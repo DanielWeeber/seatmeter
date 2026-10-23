@@ -11,6 +11,7 @@ import { budgetsPlugin } from './budgets/index.js';
 import { hinweisePlugin } from './hinweise/index.js';
 import { ingestPlugin } from './ingest-gemeinsam/registrieren.js';
 import { issuesPlugin } from './issues/index.js';
+import { jiraPlugin } from './jira/index.js';
 import { kalkulationPlugin } from './kalkulation/index.js';
 import { kontenPlugin } from './konten/index.js';
 import { mandantPlugin } from './mandant/index.js';
@@ -39,4 +40,5 @@ export const KERN_MODULE: readonly SeatmeterPlugin[] = [
   oidcPlugin,
   kontenPlugin,
   scimPlugin,
+  jiraPlugin,
 ];

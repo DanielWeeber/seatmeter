@@ -1,5 +1,5 @@
 // Anmeldung je Anfrage (Architektur §6): Sitzungs-Cookie (Provider `lokal`), optional der
-// Header-Modus hinter einem vertrauenswürdigen Proxy, danach Auth-Provider aus Plugins (ee: OIDC).
+// Header-Modus hinter einem vertrauenswürdigen Proxy, danach weitere Auth-Provider (Modul oidc, Plugins).
 // Exportiert die preHandler `requireAnmeldung`, `requireBenutzer` und `requireRolle` für alle Module.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { fehlerKoerper, rolleSchema, type AuthMe, type Rolle } from '@seatmeter/shared';

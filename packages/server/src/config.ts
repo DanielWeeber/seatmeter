@@ -194,6 +194,14 @@ export const konfigurationSchema = z.object({
   SEATMETER_OIDC_BEZEICHNUNG: z.string().min(1).max(60).default('SSO'),
   /** Gruppen → Rollen (JSON); ohne Angabe bleiben Rollen beim Login unverändert. */
   SEATMETER_OIDC_GRUPPEN: optional(gruppenJson),
+  /**
+   * Jira: http und Ziele im internen Netz (privat, Loopback, Link-Local) erlauben, z. B. für ein Jira Data
+   * Center im Firmennetz bei Selbstbetrieb. Standard aus (Schutz vor Anfragen ins Betreibernetz).
+   */
+  SEATMETER_JIRA_INTERN_ERLAUBT: z
+    .enum(['0', '1', 'true', 'false'])
+    .default('0')
+    .transform((w) => w === '1' || w === 'true'),
 });
 
 export type Konfiguration = z.output<typeof konfigurationSchema>;

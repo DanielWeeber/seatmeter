@@ -1,4 +1,4 @@
-// Verträge des ee-Moduls Jira: Verbindung je Mandant (Cloud: E-Mail + API-Token,
+// Verträge des Moduls Jira (Kern seit 2026-10-24): Verbindung je Mandant (Cloud: E-Mail + API-Token,
 // Data Center: Personal Access Token), Zuordnung seatmeter-Projekt → Jira-Projekt und Kosten je
 // Jira-Projekt und Issue. Das Token steht nur in Eingaben, nie in Antworten. Kein Rückschreiben nach Jira.
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import { ISSUE_SCHLUESSEL_MUSTER, JIRA_PROJEKT_SCHLUESSEL_MUSTER } from './issue
 export const JIRA_ARTEN = ['cloud', 'datacenter'] as const;
 export type JiraArt = (typeof JIRA_ARTEN)[number];
 
-/** `PUT /api/v1/ee/jira/verbindung`: ohne `token` bleibt das gespeicherte Token. */
+/** `PUT /api/v1/jira/verbindung`: ohne `token` bleibt das gespeicherte Token. */
 export const jiraVerbindungEingabeSchema = z
   .strictObject({
     basis_url: z.url().max(500),
@@ -26,7 +26,7 @@ export const jiraVerbindungEingabeSchema = z
   });
 export type JiraVerbindungEingabe = z.input<typeof jiraVerbindungEingabeSchema>;
 
-/** `GET /api/v1/ee/jira/verbindung` (ohne Token). */
+/** `GET /api/v1/jira/verbindung` (ohne Token). */
 export const jiraVerbindungSchema = z.object({
   eingerichtet: z.boolean(),
   basis_url: z.string().nullable(),
@@ -40,7 +40,7 @@ export const jiraVerbindungSchema = z.object({
 });
 export type JiraVerbindung = z.infer<typeof jiraVerbindungSchema>;
 
-/** `POST /api/v1/ee/jira/verbindung/pruefen` */
+/** `POST /api/v1/jira/verbindung/pruefen` */
 export const jiraPruefungSchema = z.object({
   ok: z.boolean(),
   /** Anzeigename des Jira-Kontos (keine E-Mail). */
@@ -53,7 +53,7 @@ export type JiraPruefung = z.infer<typeof jiraPruefungSchema>;
 export const jiraProjektSchema = z.object({ schluessel: z.string(), name: z.string() });
 export type JiraProjekt = z.infer<typeof jiraProjektSchema>;
 
-/** `GET /api/v1/ee/jira/projekte` (aus Jira geladen). */
+/** `GET /api/v1/jira/projekte` (aus Jira geladen). */
 export const jiraProjekteAntwortSchema = z.object({ projekte: z.array(jiraProjektSchema) });
 export type JiraProjekteAntwort = z.infer<typeof jiraProjekteAntwortSchema>;
 
@@ -65,7 +65,7 @@ export const jiraZuordnungZeileSchema = z.object({
 });
 export type JiraZuordnungZeile = z.infer<typeof jiraZuordnungZeileSchema>;
 
-/** `GET /api/v1/ee/jira/zuordnung`: alle seatmeter-Projekte des Mandanten mit ihrer Zuordnung. */
+/** `GET /api/v1/jira/zuordnung`: alle seatmeter-Projekte des Mandanten mit ihrer Zuordnung. */
 export const jiraZuordnungAntwortSchema = z.object({
   zuordnung: z.array(jiraZuordnungZeileSchema),
   /** Aktuelle Positivliste (`mandant.issue_praefixe`); `null` = alle Schlüssel. */
@@ -73,7 +73,7 @@ export const jiraZuordnungAntwortSchema = z.object({
 });
 export type JiraZuordnungAntwort = z.infer<typeof jiraZuordnungAntwortSchema>;
 
-/** `PUT /api/v1/ee/jira/zuordnung`: vollständige Liste; `null` entfernt die Zuordnung. */
+/** `PUT /api/v1/jira/zuordnung`: vollständige Liste; `null` entfernt die Zuordnung. */
 export const jiraZuordnungEingabeSchema = z.strictObject({
   zuordnung: z
     .array(
@@ -114,7 +114,7 @@ export const jiraKostenProjektSchema = kennzahlenSchema.extend({
 });
 export type JiraKostenProjekt = z.infer<typeof jiraKostenProjektSchema>;
 
-/** `GET /api/v1/ee/jira/kosten?monat=` */
+/** `GET /api/v1/jira/kosten?monat=` */
 export const jiraKostenAntwortSchema = z.object({
   monat: monatSchema,
   jira_projekte: z.array(jiraKostenProjektSchema),

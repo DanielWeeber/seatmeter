@@ -1,10 +1,10 @@
 # SSO und SCIM je Mandant
 
-Stand 2026-10-23. Gilt nur mit ee-Lizenz (Module `oidc` für die Anmeldung, `mandanten` für Domains, Konten, Kontingent und SCIM).
+Stand 2026-10-24. SSO, Domains, Konten und SCIM gehören zum Kern (Apache-2.0) und brauchen keine Lizenz. Nur das Kontenkontingent und der Plattform-Admin gehören zur Mandantenfähigkeit (ee).
 
-Jeder Mandant (Organisation mit Vertrag) richtet seinen eigenen Anmeldedienst ein. Es gibt **einen Host** für alle Mandanten: Die Anmeldeseite fragt zuerst die E-Mail-Adresse; gehört deren Domain verifiziert zu einem Mandanten, führt „Weiter zu <Bezeichnung>“ zum Anmeldedienst dieses Mandanten. Alternativ meldet man sich über das **Mandanten-Kürzel** (Slug) an. Subdomains je Mandant gibt es nicht. Der globale Anbieter des Betreibers (`SEATMETER_OIDC_*`, siehe `ee/server/README.md`) bleibt daneben unverändert.
+Jeder Mandant (Organisation mit Vertrag) richtet seinen eigenen Anmeldedienst ein. Es gibt **einen Host** für alle Mandanten: Die Anmeldeseite fragt zuerst die E-Mail-Adresse; gehört deren Domain verifiziert zu einem Mandanten, führt „Weiter zu <Bezeichnung>“ zum Anmeldedienst dieses Mandanten. Alternativ meldet man sich über das **Mandanten-Kürzel** (Slug) an. Subdomains je Mandant gibt es nicht. Der globale Anbieter des Betreibers (`SEATMETER_OIDC_*`, siehe `packages/server/src/oidc/README.md`) bleibt daneben unverändert.
 
-Eingerichtet wird alles im Dashboard unter **Einrichtung → SSO und Konten** (nur Mandanten-Admins; der Plattform-Admin sieht dieselbe Seite für jeden Mandanten).
+Eingerichtet wird alles im Dashboard unter **Einrichtung → SSO und Konten** (nur Mandanten-Admins; mit der Mandantenfähigkeit (ee) sieht der Plattform-Admin dieselbe Seite für jeden Mandanten). Die API dazu liegt unter `/api/v1/mandant/…` (z. B. `/api/v1/mandant/oidc`, `/api/v1/mandant/domains`, `/api/v1/mandant/konten`, `/api/v1/mandant/scim-tokens`).
 
 ## Teil 1: OIDC je Mandant
 
@@ -55,12 +55,12 @@ Eingerichtet wird alles im Dashboard unter **Einrichtung → SSO und Konten** (n
 
 - Domain hinzufügen (klein, Umlautdomains werden in Punycode gespeichert). Jede Domain gehört serverweit zu genau einem Mandanten (409 `domain_vergeben`); öffentliche E-Mail-Anbieter (gmail.com, outlook.com, gmx.de, web.de, yahoo.com, icloud.com, hotmail.com, t-online.de u. ä.) sind ausgeschlossen.
 - Beim DNS-Anbieter einen **TXT-Eintrag** anlegen: Name `_seatmeter.<domain>`, Wert `seatmeter-verifizierung=<token>` (beides steht auf der Seite zum Kopieren). Danach „Jetzt prüfen“; seatmeter fragt das DNS mit kurzem Timeout ab.
-- Alternativ verifiziert der Plattform-Admin eine Domain direkt (Mandant-Detail im Plattform-Bereich), z. B. wenn der Vertrag die Domain nennt. Beides steht im Audit.
+- Alternativ verifiziert der Plattform-Admin (ee) eine Domain direkt (Mandant-Detail im Plattform-Bereich), z. B. wenn der Vertrag die Domain nennt. Beides steht im Audit.
 - Erst eine verifizierte Domain führt auf der Anmeldeseite zum Anmeldedienst. Die Anmeldeseite verrät nur Domain → Mandant, nie, ob ein Konto existiert; Abfragen sind je Adresse begrenzt.
 
 ## Konten und Kontingent
 
-- **Kontenkontingent:** Der Plattform-Admin setzt je Mandant eine Höchstzahl Dashboard-Konten (Mandant-Detail, leer = unbegrenzt). Gezählt werden aktive Konten mit mindestens einer Rolle im Mandanten; Plattform-Admins zählen nicht. Geprüft wird bei Einladung, Rollenvergabe an ein Konto ohne Rolle im Mandanten, Reaktivierung, SSO-Erstanmeldung (später SCIM). Die Seite zeigt „Konten: n von m“.
+- **Kontenkontingent (ee):** Der Plattform-Admin setzt je Mandant eine Höchstzahl Dashboard-Konten (Mandant-Detail, leer = unbegrenzt). Ohne ee gibt es kein Kontingent. Gezählt werden aktive Konten mit mindestens einer Rolle im Mandanten; Plattform-Admins zählen nicht. Geprüft wird bei Einladung, Rollenvergabe an ein Konto ohne Rolle im Mandanten, Reaktivierung, SSO-Erstanmeldung und SCIM. Die Seite zeigt „Konten: n von m“.
 - **Einladen:** E-Mail-Adresse und Rolle(n) eingeben. Für ein neues Konto erscheint einmalig ein Einladungslink (`/einladung/<token>`, 7 Tage gültig); damit setzt die Person ihr Passwort und ist angemeldet. Bis dahin ist das Konto nicht anmeldbar. Mit verifizierter Domain und eigenem Anmeldedienst kann die Person sich stattdessen gleich per SSO anmelden; das Konto wird dann verknüpft. Ein schon vorhandenes Konto bekommt nur die Rolle (kein Link).
 - **Ändern:** Rollen setzen, Konto deaktivieren (beendet alle Sitzungen) oder wieder aktivieren, alle Rollen im Mandanten entziehen. Der letzte aktive Mandanten-Admin bleibt (409 `letzter_admin`), niemand deaktiviert sich selbst, und Konten mit Rollen in weiteren Mandanten deaktiviert nur der Plattform-Admin (Mandanten-Admins entziehen stattdessen die Rollen).
 

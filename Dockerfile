@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # seatmeter-Server mit Dashboard in einem Image (Architektur §9, Umsetzungsnotiz: der Server liefert packages/web/dist selbst aus).
 # Bauen:   docker build -t seatmeter:latest --build-arg GIT_SHA=$(git rev-parse --short HEAD) .
+# Standard-Ziel `runtime` enthält den Kern (Apache-2.0) und damit alles außer der Mandantenfähigkeit (Budgets, Hinweise,
 # Öffentlicher Export: nur der Kern (Apache-2.0), Standard-Ziel `runtime`.
 ARG NODE_IMAGE=node:24-bookworm-slim
 

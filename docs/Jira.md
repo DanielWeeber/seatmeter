@@ -1,8 +1,8 @@
-# Jira anbinden (ee)
+# Jira anbinden
 
 seatmeter zeigt Kosten je Jira-Projekt und je Jira-Issue. Die Zuordnung läuft über den **Issue-Schlüssel**
 im Branch-Namen (z. B. `feature/ABC-123-login` → `ABC-123`). seatmeter liest aus Jira nur Projekte, Titel
-und Status und **schreibt nichts zurück**. Funktion der ee-Lizenz (Lizenzmodul `abgleich`).
+und Status und **schreibt nichts zurück**. Teil des Kerns (Apache-2.0), ohne Lizenz nutzbar (bis 2026-10-24 eine ee-Funktion).
 
 ## Was erfasst wird
 

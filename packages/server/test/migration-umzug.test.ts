@@ -25,6 +25,9 @@ const UMGEZOGENE_TABELLEN = [
   'scim_konto',
   'mandant_scim_gruppe',
   'mandant_scim_mitglied',
+  'mandant_jira',
+  'projekt_jira',
+  'jira_issue_cache',
 ] as const;
 
 describe('Kern-Migrationen: Aktualisierung ohne ee', () => {

@@ -11,6 +11,7 @@ export const KERN_NAVIGATION: NavEintrag[] = [
   { pfad: '/personen', titel: 'Personen', gruppe: 'auswertung' },
   { pfad: '/rechner', titel: 'Rechner/Agenten', gruppe: 'auswertung' },
   { pfad: '/datenqualitaet', titel: 'Datenqualität', gruppe: 'auswertung' },
+  { pfad: '/jira-kosten', titel: 'Jira-Kosten', gruppe: 'auswertung' },
   { pfad: '/berichte', titel: 'Berichte', gruppe: 'auswertung' },
   { pfad: '/einstellungen', titel: 'Einstellungen', gruppe: 'einrichtung' },
   { pfad: '/preise', titel: 'Preise & Sitzkosten', gruppe: 'einrichtung' },
@@ -20,6 +21,7 @@ export const KERN_NAVIGATION: NavEintrag[] = [
   { pfad: '/abgleich', titel: 'Abgleich', gruppe: 'einrichtung' },
   { pfad: '/mandant', titel: 'Tokens und Orgs', gruppe: 'einrichtung' },
   { pfad: '/einrichtung/sso', titel: 'SSO und Konten', gruppe: 'einrichtung' },
+  { pfad: '/einrichtung/jira', titel: 'Jira', gruppe: 'einrichtung' },
 ];
 
 /**
