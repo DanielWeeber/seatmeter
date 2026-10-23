@@ -67,7 +67,7 @@ export async function erstelleApp(optionen: AppOptionen): Promise<FastifyInstanc
   );
   const kern = await registrierePlugins(app, KERN_MODULE, ctx);
   const register = await registrierePlugins(app, optionen.plugins ?? [], ctx);
-  pluginProvider = register.authProvider;
+  pluginProvider = [...kern.authProvider, ...register.authProvider];
   erweiterungen = [...kern.auth, ...register.auth];
   app.decorate('seatmeter', register);
   app.decorate('seatmeterKernJobs', kern.jobs);

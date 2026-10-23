@@ -14,7 +14,18 @@ import { frischeDatenbank, schemaAbbild } from './db-hilfen.js';
 const LETZTE_ALT = '2026_10_23_0021_rolle_quelle_scim';
 
 /** Seit 2026-10-24 im Kern angelegte Tabellen (vorher ee-Migrationen). */
-const UMGEZOGENE_TABELLEN = ['alarm_kanal', 'hinweis', 'ee_einstellung'] as const;
+const UMGEZOGENE_TABELLEN = [
+  'alarm_kanal',
+  'hinweis',
+  'ee_einstellung',
+  'mandant_oidc',
+  'mandant_domain',
+  'konto_einladung',
+  'mandant_scim_token',
+  'scim_konto',
+  'mandant_scim_gruppe',
+  'mandant_scim_mitglied',
+] as const;
 
 describe('Kern-Migrationen: Aktualisierung ohne ee', () => {
   let alt: Db;

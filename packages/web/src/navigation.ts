@@ -18,6 +18,8 @@ export const KERN_NAVIGATION: NavEintrag[] = [
   { pfad: '/budgets', titel: 'Budgets und Alarme', gruppe: 'einrichtung' },
   { pfad: '/hinweise', titel: 'Projekt-Hinweise', gruppe: 'einrichtung' },
   { pfad: '/abgleich', titel: 'Abgleich', gruppe: 'einrichtung' },
+  { pfad: '/mandant', titel: 'Tokens und Orgs', gruppe: 'einrichtung' },
+  { pfad: '/einrichtung/sso', titel: 'SSO und Konten', gruppe: 'einrichtung' },
 ];
 
 /**

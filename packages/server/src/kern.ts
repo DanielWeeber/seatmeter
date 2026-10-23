@@ -12,10 +12,13 @@ import { hinweisePlugin } from './hinweise/index.js';
 import { ingestPlugin } from './ingest-gemeinsam/registrieren.js';
 import { issuesPlugin } from './issues/index.js';
 import { kalkulationPlugin } from './kalkulation/index.js';
+import { kontenPlugin } from './konten/index.js';
 import { mandantPlugin } from './mandant/index.js';
 import { mergePlugin } from './merge/index.js';
+import { oidcPlugin } from './oidc/index.js';
 import type { SeatmeterPlugin } from './plugin.js';
 import { preisePlugin } from './preise/index.js';
+import { scimPlugin } from './scim/index.js';
 
 export const KERN_MODULE: readonly SeatmeterPlugin[] = [
   authPlugin,
@@ -33,4 +36,7 @@ export const KERN_MODULE: readonly SeatmeterPlugin[] = [
   budgetsPlugin,
   hinweisePlugin,
   abgleichPlugin,
+  oidcPlugin,
+  kontenPlugin,
+  scimPlugin,
 ];

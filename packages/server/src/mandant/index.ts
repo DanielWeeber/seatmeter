@@ -1,5 +1,6 @@
-// Modul mandant: Einstellungen des aktiven Mandanten (Architektur §3.1 `mandant`, §5, §7).
-// Lesen dürfen alle Rollen, ändern nur Mandanten-Admins; jede Änderung steht je Feld im `audit`.
+// Modul mandant: Einstellungen des aktiven Mandanten (Architektur §3.1 `mandant`, §5, §7) und die
+// Selbstverwaltung (Tokens, Orgs, Rollen, Konten; `verwaltung-routen.ts`, seit 2026-10-24 Kern).
+// Einstellungen lesen dürfen alle Rollen, ändern nur Mandanten-Admins; jede Änderung steht je Feld im `audit`.
 import { mandantEinstellungenEingabeSchema, type MandantEinstellungen } from '@seatmeter/shared';
 import type { Transaction } from 'kysely';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
@@ -7,6 +8,10 @@ import { benutzerVon, requireBenutzer, requireRolle } from '../auth/kontext.js';
 import { withMandant } from '../db/mandant.js';
 import type { Datenbank } from '../db/schema.js';
 import type { SeatmeterPlugin } from '../plugin.js';
+import { registriereVerwaltungRouten } from './verwaltung-routen.js';
+
+export * from './verwaltung.js';
+export { benutzerSuchen, orgListe, rollenListe, tokenListe } from './verwaltung-routen.js';
 
 type Trx = Transaction<Datenbank>;
 
@@ -45,6 +50,7 @@ const vierStellen = (w: number) => Math.round(w * 10_000) / 10_000;
 export const mandantPlugin: SeatmeterPlugin = {
   name: 'kern-mandant',
   routen(app, { db }) {
+    registriereVerwaltungRouten(app, db);
     app.get('/api/v1/mandant/einstellungen', { preHandler: requireBenutzer }, async (request) => {
       const a = benutzerVon(request);
       return withMandant(db, a.mandantId, (trx) => ladeEinstellungen(trx));

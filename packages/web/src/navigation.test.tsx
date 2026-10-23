@@ -9,7 +9,13 @@ import { json, ME_ADMIN, ME_BETRIEBSRAT, ME_LESER } from './test/fixtures';
 import { rendereApp } from './test/hilfen';
 
 const ME_PLATTFORM = { ...ME_ADMIN, plattform_admin: true };
-const EINRICHTUNG = ['Einstellungen', 'Preise & Sitzkosten', 'Ausrollen'];
+const EINRICHTUNG = [
+  'Einstellungen',
+  'Preise & Sitzkosten',
+  'Ausrollen',
+  'Tokens und Orgs',
+  'SSO und Konten',
+];
 const AUSWERTUNG = [
   'Übersicht',
   'Projekte',

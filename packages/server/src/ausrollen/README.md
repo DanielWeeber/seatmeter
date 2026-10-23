@@ -11,4 +11,4 @@ Kern (frei), nur Rolle `mandanten_admin`.
 
 Umgebungsvariablen werden je Anfrage gelesen. Gesendet wird nach dem Commit (die Transaktion gibt nur Daten
 zurück, siehe „Antworten aus Transaktionen“ in `packages/server/README` bzw. `ee/server/src/gemeinsam/antwort.ts`).
-Widerruf eines Mandanten-Tokens im Kern: noch ohne Route (ee: `DELETE /api/v1/ee/mandanten/:id/tokens/:tokenId`).
+Widerruf eines Mandanten-Tokens: `DELETE /api/v1/mandant/tokens/:tokenId` (Modul `mandant`).

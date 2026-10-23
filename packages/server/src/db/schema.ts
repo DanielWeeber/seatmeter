@@ -436,6 +436,83 @@ export interface EeEinstellungTabelle {
   geaendert: ZeitDefault;
 }
 
+/** Anmeldedienst je Mandant (Migration 0023). */
+export interface MandantOidcTabelle {
+  mandant_id: string;
+  issuer: string;
+  client_id: string;
+  /** AES-256-GCM, AAD `mandant_oidc.client_secret`; nie in Antworten. */
+  client_secret: Buffer;
+  scopes: ColumnType<string, string | undefined, string>;
+  bezeichnung: string;
+  gruppen_rollen: ColumnType<Record<string, string[]>, string | undefined, string>;
+  aktiv: ColumnType<boolean, boolean | undefined, boolean>;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+  geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
+  zuletzt_geprueft: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+}
+
+/** E-Mail-Domain je Mandant (Migration 0023), serverweit eindeutig. */
+export interface MandantDomainTabelle {
+  domain: string;
+  mandant_id: string;
+  verifiziert: ColumnType<boolean, boolean | undefined, boolean>;
+  verifizierungs_token: string;
+  verifiziert_am: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  quelle: ColumnType<
+    'dns' | 'plattform_admin' | null,
+    'dns' | 'plattform_admin' | null | undefined,
+    'dns' | 'plattform_admin' | null
+  >;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+}
+
+/** Einladung eines Kontos ohne Passwort (Migration 0023); Token nur als SHA-256. */
+export interface KontoEinladungTabelle {
+  mandant_id: string;
+  benutzer_id: string;
+  token_sha256: Buffer;
+  laeuft_ab: ColumnType<Date, Date | string, Date | string>;
+  erstellt: ColumnType<Date, Date | string | undefined, Date | string>;
+  erstellt_von: string | null;
+}
+
+/** SCIM (Migration 0024). */
+export interface MandantScimTokenTabelle {
+  id: ColumnType<string, string | undefined, never>;
+  mandant_id: string;
+  token_sha256: Buffer;
+  praefix: string;
+  bezeichnung: string | null;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+  zuletzt_genutzt: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  widerrufen: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+}
+
+export interface ScimKontoTabelle {
+  mandant_id: string;
+  benutzer_id: string;
+  external_id: string | null;
+  aktiv: ColumnType<boolean, boolean | undefined, boolean>;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+  geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+export interface MandantScimGruppeTabelle {
+  id: ColumnType<string, string | undefined, never>;
+  mandant_id: string;
+  display_name: string;
+  external_id: string | null;
+  erstellt: ColumnType<Date, Date | string | undefined, never>;
+  geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+export interface MandantScimMitgliedTabelle {
+  mandant_id: string;
+  gruppe_id: string;
+  benutzer_id: string;
+}
+
 export interface BenutzerTabelle {
   id: Id;
   benutzername: string;
@@ -561,6 +638,13 @@ export interface Datenbank {
   alarm_kanal: AlarmKanalTabelle;
   hinweis: HinweisTabelle;
   ee_einstellung: EeEinstellungTabelle;
+  mandant_oidc: MandantOidcTabelle;
+  mandant_domain: MandantDomainTabelle;
+  konto_einladung: KontoEinladungTabelle;
+  mandant_scim_token: MandantScimTokenTabelle;
+  scim_konto: ScimKontoTabelle;
+  mandant_scim_gruppe: MandantScimGruppeTabelle;
+  mandant_scim_mitglied: MandantScimMitgliedTabelle;
   benutzer: BenutzerTabelle;
   rolle: RolleTabelle;
   audit: AuditTabelle;

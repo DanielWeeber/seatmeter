@@ -14,6 +14,8 @@ export { csv, mikro, text as csvText } from './berichte/csv.js';
 export * from './aufbewahrung/index.js';
 export * from './kalkulation/index.js';
 export * from './antwort.js';
+export * from './mandant/index.js';
+export * from './konten/index.js';
 export * from './aggregation/tage.js';
 export * from './db/db.js';
 export * from './db/konstanten.js';

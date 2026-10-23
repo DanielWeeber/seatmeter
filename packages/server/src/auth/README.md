@@ -1,6 +1,6 @@
 # Modul `auth`
 
-Dashboard-Anmeldung der Free-Edition (Architektur §6). OIDC und Proxy-Header-Modus mit Gruppen kommen als `AuthProvider` aus `ee/server`.
+Dashboard-Anmeldung der Free-Edition (Architektur §6). OIDC (global und je Mandant) steht seit 2026-10-24 im Kern-Modul `oidc` (`AuthProvider` mit Anmeldeknopf und Anmeldeziel).
 
 ## Routen
 
@@ -31,7 +31,7 @@ Abweisungen kommen als `{ fehler, code }` (Codes in `@seatmeter/shared`, `fehler
 
 `requireAnmeldung` (angemeldet), `requireBenutzer` (mit aktivem Mandanten), `requireRolle('mandanten_admin' | 'projektleiter' | 'controller' | 'betriebsrat', …)` als preHandler; danach `benutzerVon(request)` → `{ benutzerId, mandantId, rollen, projektIds }` (`projektIds` nur bei reinen Projektleitern, sonst `null` = alle). Provider `lokalerAuthProvider` erfüllt die Schnittstelle `AuthProvider`; Plugin-Provider (ee) werden nach Cookie und Header-Modus gefragt.
 
-Erweiterungspunkte für Plugins (`plugin.ts`): `AuthProvider.anmeldeLink` (Knopf auf der Anmeldeseite; OIDC legt nach dem Rückruf mit `erstelleSitzung(…, 'oidc')` eine normale Sitzung an), `SeatmeterPlugin.auth` (`AuthErweiterung`: `zusatzRollen` für Mandantenwahl, Sitzung und `/me` – ee: Plattform-Admin sieht jeden Mandanten als `controller`; `me` für Zusatzfelder in `/me`) und `SeatmeterPlugin.migrationen` (eigene Protokolltabelle `kysely_migration_<name>`, ausgeführt von `migrierePlugins` in `main.ts`). `alleRollen(zustand, benutzerId)` = `rolle` plus Plugin-Rollen. `rolle.quelle` (`manuell`, `oidc`) und `benutzer_sitzung.quelle = 'oidc'` kommen aus Migration 0013.
+Erweiterungspunkte für Plugins (`plugin.ts`): `AuthProvider.anmeldeLink` (Knopf auf der Anmeldeseite; OIDC legt nach dem Rückruf mit `erstelleSitzung(…, 'oidc')` eine normale Sitzung an), `SeatmeterPlugin.auth` (`AuthErweiterung`: `zusatzRollen` für Mandantenwahl, Sitzung und `/me` – ee: Plattform-Admin sieht jeden Mandanten als `controller`; `me` für Zusatzfelder in `/me`; seit 2026-10-24 außerdem `kontingentPruefen`/`kontingentStand` für das Kontenkontingent, `plattformAdmins`, `mandantVerwalten` und `plattformAdminAbgleichen` für die Mandantenverwaltung, siehe `mandant/README.md`) und `SeatmeterPlugin.migrationen` (eigene Protokolltabelle `kysely_migration_<name>`, ausgeführt von `migrierePlugins` in `main.ts`). `alleRollen(zustand, benutzerId)` = `rolle` plus Plugin-Rollen. `rolle.quelle` (`manuell`, `oidc`) und `benutzer_sitzung.quelle = 'oidc'` kommen aus Migration 0013.
 
 ## Header-Modus hinter Authelia (Pilot)
 

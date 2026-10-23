@@ -170,7 +170,7 @@ curl -fsSL <release-url>/agent-install.sh | SEATMETER_RELEASE_URL=<release-url> 
 1. Quelle A abschalten: Managed Settings entfernen (MDM-Datei löschen bzw. in claude.ai leeren) oder den Start-Wrapper aus der Shell-Konfiguration nehmen.
 2. Je Rechner `seatmeter-agent uninstall --alles` (Hooks, Sweeper, Token und `~/.seatmeter`).
 3. Rechner auf „Rechner/Agenten“ widerrufen (Audit „Rechner widerrufen“).
-4. Mandanten-Token widerrufen: ee auf der Seite „Tokens und Orgs“ (bzw. Plattform-Bereich → „Mandanten“ → Mandant) → „Widerrufen“ (`DELETE /api/v1/ee/mandanten/<id>/tokens/<tokenId>`); Free-Edition noch ohne Dashboard-Funktion, dort setzt der Betrieb `ingest_token.widerrufen` (Präfix aus dem Audit-Eintrag „Ingest-Token erzeugt“, Objekt `ingest_token:<präfix>`).
+4. Mandanten-Token widerrufen: Einrichtung → „Tokens und Orgs“ (bzw. mit ee Plattform-Bereich → „Mandanten“ → Mandant) → „Widerrufen“ (`DELETE /api/v1/mandant/tokens/<tokenId>`, für einen anderen Mandanten mit `?mandant=<id>`).
 5. Gespeicherte Daten laufen nach den Aufbewahrungsfristen ab. Sofort löschen (ee, Plattform-Admin): Plattform-Bereich → „Mandanten“ → Mandant → „Mandant löschen“ (`DELETE /api/v1/ee/mandanten/<id>`, Slug zur Bestätigung); der Löschnachweis steht im Plattform-Protokoll (Plattform-Bereich → „Protokoll“).
 
 ## 10. Bekannte Grenzen

@@ -14,6 +14,7 @@ import { Budgets } from './seiten/budgets/Budgets';
 import { Datenqualitaet } from './seiten/Datenqualitaet';
 import { Einstellungen } from './seiten/Einstellungen';
 import { Hinweise } from './seiten/hinweise/Hinweise';
+import { Mandant } from './seiten/mandant/Mandant';
 import { Personen } from './seiten/Personen';
 import { Platzhalter } from './seiten/Platzhalter';
 import { Preise } from './seiten/Preise';
@@ -21,6 +22,7 @@ import { ProjektDetail } from './seiten/ProjektDetail';
 import { Projekte } from './seiten/Projekte';
 import { Projektpreise } from './seiten/Projektpreise';
 import { Rechner } from './seiten/Rechner';
+import { SsoUndKonten } from './seiten/sso/SsoUndKonten';
 import { Systemzustand } from './seiten/Systemzustand';
 import { Uebersicht } from './seiten/Uebersicht';
 
@@ -39,6 +41,8 @@ const SEITEN: Record<string, ReactElement> = {
   '/budgets': <Budgets />,
   '/hinweise': <Hinweise />,
   '/abgleich': <Abgleich />,
+  '/mandant': <Mandant />,
+  '/einrichtung/sso': <SsoUndKonten />,
 };
 
 /** Leitet einen alten Pfad um; `:name` kommt aus dem alten Pfad, Suchparameter bleiben. */

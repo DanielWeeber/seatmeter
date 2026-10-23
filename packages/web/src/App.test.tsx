@@ -21,6 +21,8 @@ describe('Dashboard', () => {
       'Budgets und Alarme',
       'Projekt-Hinweise',
       'Abgleich',
+      'Tokens und Orgs',
+      'SSO und Konten',
       'Systemzustand',
     ]) {
       expect(within(nav).getByRole('link', { name: titel })).toBeTruthy();

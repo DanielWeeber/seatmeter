@@ -1,10 +1,12 @@
 // Erweiterungspunkt SeatmeterPlugin (Architektur §2.3, §8): `ee/` registriert sich hierüber.
 // Der Kern importiert nie aus `ee/`; Plugins werden per Modulname (SEATMETER_PLUGINS) geladen.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { Transaction } from 'kysely';
 import type { Migration } from 'kysely/migration';
 import type { NavEintrag, Rolle } from '@seatmeter/shared';
 import type { Konfiguration } from './config.js';
 import type { Db } from './db/db.js';
+import type { Datenbank } from './db/schema.js';
 
 export interface PluginKontext {
   db: Db;
@@ -75,7 +77,7 @@ export interface MandantRolle {
   projekt_ids: string[] | null;
 }
 
-/** Erweiterung der Anmeldung durch Plugins (ee: Plattform-Admin, Lizenzstatus in `/me`). */
+/** Erweiterung der Anmeldung durch Plugins (ee: Plattform-Admin, Lizenzstatus in `/me`, Kontenkontingent). */
 export interface AuthErweiterung {
   /**
    * Zusätzliche Mandanten-Rollen, die nicht in `rolle` stehen (ee: Plattform-Admins sehen jeden
@@ -89,11 +91,39 @@ export interface AuthErweiterung {
     ctx: PluginKontext,
   ): Promise<Record<string, unknown>>;
   /**
-   * Kontenkontingent (ee: `mandant.konten_max`): Darf im Mandanten ein weiteres Konto eine Rolle bekommen?
-   * Der Kern fragt das, bevor er selbst ein Konto mit Rolle anlegt (Header-Modus, SEATMETER_AUTO_MANDANT);
-   * `false` = ablehnen. Ohne Erweiterung gilt kein Kontingent.
+   * Kontenkontingent (ee: `mandant.konten_max`, gesetzt vom Plattform-Admin). Gefragt in der Transaktion des
+   * Mandanten (`withMandant`), bevor ein Konto seine erste Rolle im Mandanten bekommt (Einladung,
+   * Rollenvergabe, Reaktivierung, SSO-Erstanmeldung, SCIM, Header-Modus); `benutzerId` `null` = neues Konto.
+   * Ergebnis `null` = passt, sonst der volle Stand. Darf bis Transaktionsende eine Sperre je Mandant halten.
+   * Ohne Erweiterung gilt kein Kontingent.
    */
-  kontoZulassen?(mandantId: string, ctx: PluginKontext): Promise<boolean>;
+  kontingentPruefen?(
+    trx: Transaction<Datenbank>,
+    benutzerId: string | null,
+  ): Promise<KontingentStand | null>;
+  /** Stand des Kontenkontingents für Anzeigen (ee); ohne Erweiterung zählt der Kern, ohne Obergrenze. */
+  kontingentStand?(trx: Transaction<Datenbank>): Promise<KontingentStand>;
+  /**
+   * Konten, die über allen Mandanten stehen (ee: Plattform-Admins). Sie zählen nicht im Kontenkontingent, nur
+   * solche Konten ändern sie in der Kontenverwaltung, und SCIM eines Mandanten sperrt oder benennt sie nie.
+   */
+  plattformAdmins?(ctx: PluginKontext): Promise<string[]>;
+  /**
+   * Darf das Konto den Mandanten verwalten, ohne dort Mandanten-Admin zu sein (ee: Plattform-Admin mit
+   * Lizenz)? Grundlage der Mandantenverwaltung unter `/api/v1/mandant/…` mit `?mandant=<id>`.
+   */
+  mandantVerwalten?(benutzerId: string, mandantId: string, ctx: PluginKontext): Promise<boolean>;
+  /**
+   * Gruppen-Zuordnung des globalen OIDC-Anbieters (`SEATMETER_OIDC_GRUPPEN` mit `{ "plattform_admin": true }`):
+   * Plattform-Admin aus Gruppen setzen bzw. entziehen (ee). Ohne Erweiterung bleibt das Ziel wirkungslos.
+   */
+  plattformAdminAbgleichen?(benutzerId: string, soll: boolean, ctx: PluginKontext): Promise<void>;
+}
+
+/** Kontenkontingent eines Mandanten: belegte Plätze und Obergrenze (`null` = unbegrenzt). */
+export interface KontingentStand {
+  belegt: number;
+  max: number | null;
 }
 
 /**

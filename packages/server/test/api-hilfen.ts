@@ -1,7 +1,7 @@
 // Hilfen für API-Tests: Konfiguration, Mandanten, Personen, Projekte und Sitzungen direkt in der DB.
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Rolle } from '@seatmeter/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { erstelleApp } from '../src/app.js';
 import { ladeKonfiguration, type Konfiguration } from '../src/config.js';
 import type { Db } from '../src/db/db.js';
@@ -119,4 +119,9 @@ export async function meldeAn(
       'x-seatmeter-csrf': csrf,
     },
   };
+}
+
+/** Cookies einer Antwort als `cookie`-Header für die nächste Anfrage. */
+export function cookiesAus(r: LightMyRequestResponse): string {
+  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 }

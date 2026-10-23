@@ -321,11 +321,17 @@ async function ausHeader(
       request.log.warn('Header-Anmeldung: kein Mandant für neue Benutzer (SEATMETER_AUTO_MANDANT)');
       return null;
     }
-    for (const e of zustand.erweiterungen()) {
-      if (e.kontoZulassen && !(await e.kontoZulassen(mandantId, zustand.ctx))) {
-        request.log.warn('Header-Anmeldung: Kontenkontingent des Mandanten ausgeschöpft');
-        return null;
+    // Kontenkontingent (ee): passt noch ein neues Konto mit Rolle in den Mandanten?
+    const voll = await withMandant(db, mandantId, async (trx) => {
+      for (const e of zustand.erweiterungen()) {
+        const stand = await e.kontingentPruefen?.(trx, null);
+        if (stand) return stand;
       }
+      return null;
+    });
+    if (voll) {
+      request.log.warn('Header-Anmeldung: Kontenkontingent des Mandanten ausgeschöpft');
+      return null;
     }
     const neu = await db.transaction().execute(async (trx) => {
       const angelegt = await trx

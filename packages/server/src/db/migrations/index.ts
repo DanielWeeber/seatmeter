@@ -14,6 +14,8 @@ import * as m0019 from './2026_10_23_0019_sso_je_mandant.js';
 import * as m0020 from './2026_10_23_0020_issue_schluessel.js';
 import * as m0021 from './2026_10_23_0021_rolle_quelle_scim.js';
 import * as m0022 from './2026_10_24_0022_budgets_hinweise.js';
+import * as m0023 from './2026_10_24_0023_sso_je_mandant.js';
+import * as m0024 from './2026_10_24_0024_scim.js';
 
 export const MIGRATIONEN: Record<string, Migration> = {
   '2026_10_22_0001_grundschema': m0001,
@@ -30,4 +32,6 @@ export const MIGRATIONEN: Record<string, Migration> = {
   '2026_10_23_0020_issue_schluessel': m0020,
   '2026_10_23_0021_rolle_quelle_scim': m0021,
   '2026_10_24_0022_budgets_hinweise': m0022,
+  '2026_10_24_0023_sso_je_mandant': m0023,
+  '2026_10_24_0024_scim': m0024,
 };

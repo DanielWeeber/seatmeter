@@ -1,0 +1,59 @@
+{
+  "_quelle": "Aufbau wie Microsoft Entra ID Provisioning (SCIM 2.0, Doku „Develop and plan provisioning for a SCIM endpoint“): Anlegen mit externalId und Enterprise-Erweiterung, Booleans als Zeichenketten, PATCH mit Pfadfiltern, Gruppen-PATCH Add/Remove members. Werte erfunden.",
+  "user_suchen": "/scim/v2/Users?filter=userName+eq+%22Alex.Muster%40kunde.example.org%22",
+  "user_anlegen": {
+    "schemas": [
+      "urn:ietf:params:scim:schemas:core:2.0:User",
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    ],
+    "externalId": "0b3f5c1e-1f2a-4c8e-9d3b-7a1e2f4c5d6e",
+    "userName": "Alex.Muster@kunde.example.org",
+    "active": true,
+    "displayName": "Alex Muster",
+    "emails": [{ "primary": true, "type": "work", "value": "alex.muster@kunde.example.org" }],
+    "meta": { "resourceType": "User" },
+    "name": { "formatted": "Alex Muster", "familyName": "Muster", "givenName": "Alex" },
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": { "department": "Entwicklung" }
+  },
+  "user_attribute": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [
+      {
+        "op": "Add",
+        "path": "emails[type eq \"work\"].value",
+        "value": "alex.muster@kunde.example.org"
+      },
+      { "op": "Replace", "path": "displayName", "value": "Alex M." },
+      { "op": "Add", "path": "name.givenName", "value": "Alex" },
+      {
+        "op": "Replace",
+        "path": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department",
+        "value": "Betrieb"
+      }
+    ]
+  },
+  "user_deaktivieren": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "Replace", "path": "active", "value": "False" }]
+  },
+  "user_aktivieren": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "Replace", "path": "active", "value": "True" }]
+  },
+  "gruppe_suchen": "/scim/v2/Groups?filter=displayName+eq+%22seatmeter-admins%22&excludedAttributes=members",
+  "gruppe_anlegen": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+    "externalId": "8e6c2d1a-3b4f-4a5e-8c7d-9f0e1a2b3c4d",
+    "displayName": "seatmeter-admins",
+    "meta": { "resourceType": "Group" },
+    "members": []
+  },
+  "gruppe_mitglied_hinzu": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "Add", "path": "members", "value": [{ "value": "{{userId}}" }] }]
+  },
+  "gruppe_mitglied_weg": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "Remove", "path": "members", "value": [{ "value": "{{userId}}" }] }]
+  }
+}

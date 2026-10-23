@@ -1,0 +1,42 @@
+{
+  "_quelle": "Aufbau wie Okta SCIM 2.0 (Doku „SCIM 2.0 protocol reference“): Anlegen mit Passwort-Feld (wird verworfen), PUT für Profiländerungen, PATCH replace mit Wertobjekt, Gruppen-Push mit members und PATCH remove per Pfadfilter. Werte erfunden.",
+  "user_anlegen": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+    "userName": "kim.beispiel@kunde.example.org",
+    "name": { "givenName": "Kim", "familyName": "Beispiel" },
+    "emails": [{ "primary": true, "value": "kim.beispiel@kunde.example.org", "type": "work" }],
+    "displayName": "Kim Beispiel",
+    "locale": "de-DE",
+    "externalId": "00u1abcd2EFGH3ijk4l5",
+    "groups": [],
+    "password": "nur-ein-test-wird-verworfen",
+    "active": true
+  },
+  "user_ersetzen": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+    "id": "{{userId}}",
+    "userName": "kim.beispiel@kunde.example.org",
+    "name": { "givenName": "Kim", "familyName": "Beispiel-Neu" },
+    "emails": [{ "primary": true, "value": "kim.beispiel@kunde.example.org", "type": "work" }],
+    "active": true
+  },
+  "user_deaktivieren": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "replace", "value": { "active": false } }]
+  },
+  "gruppe_anlegen": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+    "displayName": "seatmeter-leser",
+    "members": [{ "value": "{{userId}}", "display": "kim.beispiel@kunde.example.org" }]
+  },
+  "gruppe_umbenennen": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [
+      { "op": "replace", "value": { "id": "{{gruppeId}}", "displayName": "seatmeter-betriebsrat" } }
+    ]
+  },
+  "gruppe_mitglied_weg": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{ "op": "remove", "path": "members[value eq \"{{userId}}\"]" }]
+  }
+}

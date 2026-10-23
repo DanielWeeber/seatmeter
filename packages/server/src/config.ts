@@ -82,6 +82,47 @@ const trustProxy = z
     return z.NEVER;
   });
 
+const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/);
+
+/** Ziel einer OIDC-Gruppe: Rolle in einem Mandanten (per Slug) oder Plattform-Admin (wirkt nur mit ee). */
+export const gruppenZielSchema = z.union([
+  z.strictObject({
+    mandant: slug,
+    rolle: z.enum(ROLLEN),
+    projekt_ids: z.array(z.uuid()).optional(),
+  }),
+  z.strictObject({ plattform_admin: z.literal(true) }),
+]);
+export type GruppenZiel = z.output<typeof gruppenZielSchema>;
+
+/** `SEATMETER_OIDC_GRUPPEN`: `{ "<gruppe>": Ziel | Ziel[] }`. */
+export const gruppenSchema = z.record(
+  z.string().min(1),
+  z
+    .union([gruppenZielSchema, z.array(gruppenZielSchema)])
+    .transform((z) => (Array.isArray(z) ? z : [z])),
+);
+export type GruppenZuordnung = z.output<typeof gruppenSchema>;
+
+const gruppenJson = z.string().transform((text, ctx) => {
+  let roh: unknown;
+  try {
+    roh = JSON.parse(text);
+  } catch {
+    ctx.addIssue({ code: 'custom', message: 'kein gültiges JSON' });
+    return z.NEVER;
+  }
+  const g = gruppenSchema.safeParse(roh);
+  if (!g.success) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Aufbau { "<gruppe>": { mandant, rolle } | { plattform_admin: true } }',
+    });
+    return z.NEVER;
+  }
+  return g.data;
+});
+
 export const konfigurationSchema = z.object({
   DATABASE_URL: z
     .string()
@@ -142,6 +183,17 @@ export const konfigurationSchema = z.object({
   SEATMETER_RATE_ENROLL_FEHLVERSUCHE: grenze('1/5'),
   /** Abgleich: Basis-URL der Analytics API (Standard api.anthropic.com; nur für Tests oder einen Proxy). */
   SEATMETER_ANALYTICS_URL: optional(z.url()),
+  /** OIDC (globaler Anbieter des Betreibers, Referenz Authelia): Issuer-URL für die Discovery. */
+  SEATMETER_OIDC_ISSUER: optional(z.url()),
+  SEATMETER_OIDC_CLIENT_ID: optional(z.string().min(1).max(200)),
+  SEATMETER_OIDC_CLIENT_SECRET: optional(z.string().min(1).max(500)),
+  /** Rückruf-URL; Standard: SEATMETER_PUBLIC_URL + /api/v1/auth/oidc/callback (auch für SSO je Mandant). */
+  SEATMETER_OIDC_REDIRECT_URI: optional(z.url()),
+  SEATMETER_OIDC_SCOPES: z.string().default('openid profile email groups'),
+  /** Name im Anmeldeknopf: „Mit <Bezeichnung> anmelden“. */
+  SEATMETER_OIDC_BEZEICHNUNG: z.string().min(1).max(60).default('SSO'),
+  /** Gruppen → Rollen (JSON); ohne Angabe bleiben Rollen beim Login unverändert. */
+  SEATMETER_OIDC_GRUPPEN: optional(gruppenJson),
 });
 
 export type Konfiguration = z.output<typeof konfigurationSchema>;
