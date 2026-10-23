@@ -1,0 +1,125 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } },
+          { "key": "service.version", "value": { "stringValue": "2.1.290" } },
+          { "key": "os.type", "value": { "stringValue": "darwin" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "com.anthropic.claude_code", "version": "2.1.290" },
+          "metrics": [
+            {
+              "name": "claude_code.token.usage",
+              "description": "Number of tokens used",
+              "unit": "tokens",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "{{START_NANO}}",
+                    "timeUnixNano": "{{JETZT_NANO}}",
+                    "asDouble": 1200,
+                    "attributes": [
+                      { "key": "type", "value": { "stringValue": "input" } },
+                      { "key": "model", "value": { "stringValue": "claude-opus-5-5" } },
+                      { "key": "query_source", "value": { "stringValue": "main" } },
+                      {
+                        "key": "session.id",
+                        "value": { "stringValue": "5d7f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" }
+                      },
+                      {
+                        "key": "organization.id",
+                        "value": { "stringValue": "7d0a1c3e-5b2f-4c8d-9e1a-0b2c3d4e5f60" }
+                      },
+                      {
+                        "key": "user.account_uuid",
+                        "value": { "stringValue": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+                      },
+                      {
+                        "key": "user.email",
+                        "value": { "stringValue": "test.person@example.com" }
+                      }
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "{{START_NANO}}",
+                    "timeUnixNano": "{{JETZT_NANO}}",
+                    "asDouble": 350,
+                    "attributes": [
+                      { "key": "type", "value": { "stringValue": "output" } },
+                      { "key": "model", "value": { "stringValue": "claude-opus-5-5" } },
+                      { "key": "query_source", "value": { "stringValue": "main" } },
+                      {
+                        "key": "session.id",
+                        "value": { "stringValue": "5d7f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" }
+                      },
+                      {
+                        "key": "organization.id",
+                        "value": { "stringValue": "7d0a1c3e-5b2f-4c8d-9e1a-0b2c3d4e5f60" }
+                      },
+                      {
+                        "key": "user.account_uuid",
+                        "value": { "stringValue": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "claude_code.cost.usage",
+              "unit": "USD",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "{{START_NANO}}",
+                    "timeUnixNano": "{{JETZT_NANO}}",
+                    "asDouble": 0.0312,
+                    "attributes": [
+                      { "key": "model", "value": { "stringValue": "claude-opus-5-5" } },
+                      { "key": "query_source", "value": { "stringValue": "main" } },
+                      {
+                        "key": "session.id",
+                        "value": { "stringValue": "5d7f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" }
+                      },
+                      {
+                        "key": "organization.id",
+                        "value": { "stringValue": "7d0a1c3e-5b2f-4c8d-9e1a-0b2c3d4e5f60" }
+                      },
+                      {
+                        "key": "user.account_uuid",
+                        "value": { "stringValue": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "claude_code.lines_of_code.count",
+              "unit": "count",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "{{JETZT_NANO}}",
+                    "asInt": "42",
+                    "attributes": [{ "key": "type", "value": { "stringValue": "added" } }]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

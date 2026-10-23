@@ -1,0 +1,20 @@
+# Nur Quellen ins Build-Kontext; Abhängigkeiten und Builds entstehen im Image.
+**/node_modules
+**/dist
+**/dist-ee
+**/coverage
+**/*.tsbuildinfo
+**/.vite
+.git
+.beads
+.agents
+.claude
+.codex
+.cursor
+.forgejo
+.DS_Store
+**/.env
+**/.env.*
+deploy/*.env
+docs
+tests

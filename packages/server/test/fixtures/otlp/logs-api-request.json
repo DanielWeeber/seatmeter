@@ -1,0 +1,99 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } },
+          { "key": "service.version", "value": { "stringValue": "2.1.290" } },
+          { "key": "os.type", "value": { "stringValue": "darwin" } },
+          { "key": "os.version", "value": { "stringValue": "25.0.0" } },
+          { "key": "host.arch", "value": { "stringValue": "arm64" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "com.anthropic.claude_code.events", "version": "2.1.290" },
+          "logRecords": [
+            {
+              "timeUnixNano": "{{JETZT_NANO}}",
+              "observedTimeUnixNano": "{{JETZT_NANO}}",
+              "body": { "stringValue": "claude_code.api_request" },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_request" } },
+                { "key": "event.timestamp", "value": { "stringValue": "{{JETZT_ISO}}" } },
+                { "key": "event.sequence", "value": { "intValue": "7" } },
+                {
+                  "key": "session.id",
+                  "value": { "stringValue": "5d7f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" }
+                },
+                {
+                  "key": "organization.id",
+                  "value": { "stringValue": "7d0a1c3e-5b2f-4c8d-9e1a-0b2c3d4e5f60" }
+                },
+                {
+                  "key": "user.account_uuid",
+                  "value": { "stringValue": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+                },
+                { "key": "user.account_id", "value": { "stringValue": "user_01TESTKONTOFIXTURE" } },
+                { "key": "user.email", "value": { "stringValue": "test.person@example.com" } },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+                  }
+                },
+                { "key": "terminal.type", "value": { "stringValue": "iTerm.app" } },
+                { "key": "model", "value": { "stringValue": "claude-opus-5-5" } },
+                { "key": "cost_usd", "value": { "doubleValue": 0.0312 } },
+                { "key": "cost_usd_micros", "value": { "intValue": "31200" } },
+                { "key": "duration_ms", "value": { "intValue": "4180" } },
+                { "key": "input_tokens", "value": { "stringValue": "1200" } },
+                { "key": "output_tokens", "value": { "stringValue": "350" } },
+                { "key": "cache_read_tokens", "value": { "stringValue": "48000" } },
+                { "key": "cache_creation_tokens", "value": { "stringValue": "2100" } },
+                { "key": "request_id", "value": { "stringValue": "{{REQUEST_ID}}" } },
+                {
+                  "key": "client_request_id",
+                  "value": { "stringValue": "c0ffee00-1111-4222-8333-444455556666" }
+                },
+                { "key": "speed", "value": { "stringValue": "normal" } },
+                { "key": "query_source", "value": { "stringValue": "repl_main_thread" } },
+                { "key": "effort", "value": { "stringValue": "high" } },
+                {
+                  "key": "vcs.repository.url.full",
+                  "value": { "stringValue": "https://github.com/example-org/example-repo" }
+                },
+                { "key": "vcs.owner.name", "value": { "stringValue": "example-org" } },
+                { "key": "vcs.repository.name", "value": { "stringValue": "example-repo" } },
+                { "key": "vcs.provider.name", "value": { "stringValue": "github" } }
+              ]
+            },
+            {
+              "timeUnixNano": "{{START_NANO}}",
+              "body": { "stringValue": "claude_code.auth" },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "auth" } },
+                {
+                  "key": "session.id",
+                  "value": { "stringValue": "5d7f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" }
+                },
+                {
+                  "key": "organization.id",
+                  "value": { "stringValue": "7d0a1c3e-5b2f-4c8d-9e1a-0b2c3d4e5f60" }
+                },
+                {
+                  "key": "user.account_uuid",
+                  "value": { "stringValue": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+                },
+                { "key": "user.email", "value": { "stringValue": "test.person@example.com" } },
+                { "key": "action", "value": { "stringValue": "login" } },
+                { "key": "success", "value": { "stringValue": "true" } },
+                { "key": "auth_method", "value": { "stringValue": "oauth" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

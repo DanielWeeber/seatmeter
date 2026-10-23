@@ -1,0 +1,58 @@
+# seatmeter im Betrieb: Server (API, Ingest, Dashboard) und Postgres 18. Anleitung: deploy/README.md.
+#   cp env.example .env && chmod 600 .env   # Werte setzen
+#   docker compose -f deploy/compose.yml up -d --build
+# Kein veröffentlichter Port: der Reverse-Proxy erreicht den Server im externen Netz (Standard `proxy`, änderbar über
+# SEATMETER_PROXY_NETZ) als `server:8080` bzw. über den Containernamen. Postgres hängt nur am internen Netz.
+# Migrationen laufen beim Serverstart (Kysely-Migrator unter Advisory-Lock); ein eigener Migrationsdienst ist nicht nötig.
+name: seatmeter
+
+services:
+  server:
+    image: ${SEATMETER_IMAGE:-seatmeter:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://seatmeter:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env}@postgres:5432/seatmeter
+      PORT: '8080'
+    networks: [proxy, intern]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 512m
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: seatmeter
+      POSTGRES_DB: seatmeter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env}
+    volumes:
+      # Ab postgres:18 liegt PGDATA unter /var/lib/postgresql/18/docker.
+      - pg-data:/var/lib/postgresql
+    networks: [intern]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U seatmeter -d seatmeter']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    shm_size: 128m
+    mem_limit: 512m
+
+networks:
+  proxy:
+    external: true
+    name: ${SEATMETER_PROXY_NETZ:-proxy}
+  intern:
+    internal: true
+
+volumes:
+  pg-data:

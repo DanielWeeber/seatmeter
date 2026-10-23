@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "allowImportingTsExtensions": false
+  },
+  "include": ["src", "vite.config.ts", "web-plugins.ts", "web-plugins.test.ts"],
+  "references": [{ "path": "../shared" }]
+}

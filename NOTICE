@@ -1,0 +1,19 @@
+seatmeter
+Copyright 2026 Daniel Weeber (weeberwrk)
+
+Die Apache License 2.0 gilt für alle Dateien außerhalb des Ordners ee/. Für ee/ gilt die
+weeberwrk Enterprise-Lizenz (ee/LICENSE, deutsche Fassung verbindlich; englische Übersetzung
+ee/LICENSE-EN.md): produktive Nutzung nur mit gültigem Lizenzschlüssel von weeberwrk.
+
+Dieses Produkt enthält bzw. nutzt Software Dritter:
+
+- opentelemetry-proto (Protobuf-Definitionen des OpenTelemetry Protocol)
+  Copyright The OpenTelemetry Authors
+  Lizenz: Apache License 2.0
+  https://github.com/open-telemetry/opentelemetry-proto
+  Unveränderte Kopie (Tag v1.11.1) unter packages/server/proto/ mit Lizenztext;
+  daraus erzeugt: packages/server/src/ingest-otlp/otlp-proto.generiert.ts (OTLP-Empfänger).
+
+Claude-Code-Agent-Monitor (CCAM, MIT, Copyright (c) 2026 - Now, Son Nguyen) dient nur als
+Konzeptvorlage; derzeit ist kein Code daraus übernommen. Wird Code übernommen, kommt der
+MIT-Hinweis hier und in den betroffenen Dateien dazu.

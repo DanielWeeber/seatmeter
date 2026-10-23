@@ -1,0 +1,29 @@
+
+# Beads-/Dolt-Dateien (Projekt-Memory, nur intern)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
+
+# Node / pnpm / TypeScript
+node_modules/
+.pnpm-store/
+dist/
+dist-ee/
+build/
+coverage/
+*.tsbuildinfo
+.turbo/
+.vite/
+npm-debug.log*
+pnpm-debug.log*
+
+# Laufdaten und Secrets
+.env
+.env.*
+!.env.example
+
+# System
+.DS_Store
+.claude/settings.local.json

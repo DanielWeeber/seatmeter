@@ -1,0 +1,51 @@
+# Entwicklungsumgebung: alle Werkzeuge (node, pnpm, tsc, eslint, vitest) laufen im Container dev,
+# Postgres 18 läuft daneben. Nichts davon wird auf dem Host installiert.
+#   docker compose -f deploy/compose.dev.yml run --rm dev pnpm install
+#   docker compose -f deploy/compose.dev.yml run --rm dev pnpm test
+# Die Werte hier sind reine Entwicklungs-Vorgaben, keine Geheimnisse.
+name: seatmeter-dev
+
+services:
+  dev:
+    image: node:24-bookworm-slim
+    working_dir: /work
+    entrypoint: ['sh', '-c', 'corepack enable && exec "$$@"', '--']
+    command: ['pnpm', '--version']
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+      npm_config_store_dir: /pnpm/store
+      DATABASE_URL: postgres://seatmeter:${POSTGRES_PASSWORD:-seatmeter-dev}@postgres:5432/seatmeter
+      # 32 Byte, Base64 von "dev-nur-lokal-kein-geheimnis-32b" (nur Entwicklung).
+      SEATMETER_MASTER_KEY: ${SEATMETER_MASTER_KEY:-ZGV2LW51ci1sb2thbC1rZWluLWdlaGVpbW5pcy0zMmI=}
+      PORT: '8080'
+      LOG_LEVEL: info
+    ports:
+      - '127.0.0.1:5173:5173'
+      - '127.0.0.1:8080:8080'
+    volumes:
+      - ..:/work
+      - pnpm-store:/pnpm/store
+      - corepack-cache:/root/.cache/node/corepack
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: seatmeter
+      POSTGRES_DB: seatmeter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seatmeter-dev}
+    volumes:
+      # Ab postgres:18 liegt PGDATA unter /var/lib/postgresql/18/docker.
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U seatmeter -d seatmeter']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pnpm-store:
+  corepack-cache:
+  pg-data:

@@ -1,0 +1,11 @@
+# Doku pflegen wir von Hand (ARCHITEKTUR.md ist eine wörtliche Kopie).
+**/*.md
+pnpm-lock.yaml
+**/dist/
+**/dist-ee/
+**/coverage/
+.beads/
+.agents/
+.codex/
+.cursor/
+.claude/

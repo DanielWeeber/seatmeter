@@ -1,0 +1,47 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } },
+          { "key": "service.version", "value": { "stringValue": "2.1.290" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "com.anthropic.claude_code.events" },
+          "logRecords": [
+            {
+              "timeUnixNano": "{{JETZT_NANO}}",
+              "body": { "stringValue": "claude_code.api_request" },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_request" } },
+                { "key": "event.timestamp", "value": { "stringValue": "{{JETZT_ISO}}" } },
+                {
+                  "key": "session.id",
+                  "value": { "stringValue": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d" }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44"
+                  }
+                },
+                { "key": "model", "value": { "stringValue": "claude-sonnet-5-5" } },
+                { "key": "input_tokens", "value": { "intValue": "900" } },
+                { "key": "output_tokens", "value": { "intValue": "120" } },
+                { "key": "cache_read_tokens", "value": { "intValue": "0" } },
+                { "key": "cache_creation_tokens", "value": { "intValue": "0" } },
+                { "key": "request_id", "value": { "stringValue": "req_011APIKEYFIXTURE001" } },
+                {
+                  "key": "vcs.repository.url.full",
+                  "value": { "stringValue": "https://github.com/example-org/api-key-repo" }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

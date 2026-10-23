@@ -1,0 +1,59 @@
+# Prüfung des öffentlichen seatmeter-Repositorys (GitHub Actions): lint, format:check, typecheck, test gegen
+# Postgres 18 und build auf jedem Pull Request und jedem Push nach main, dazu das Kern-Image (Ziel runtime).
+# Das Repository ist ein Export; wie Beiträge übernommen werden, steht in CONTRIBUTING.md.
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: node:24-bookworm
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: seatmeter
+          POSTGRES_DB: seatmeter
+          POSTGRES_PASSWORD: seatmeter-ci
+        options: >-
+          --health-cmd "pg_isready -U seatmeter -d seatmeter"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgres://seatmeter:seatmeter-ci@postgres:5432/seatmeter
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v5
+      - name: pnpm über corepack
+        run: corepack enable && pnpm --version
+      - name: Abhängigkeiten
+        run: pnpm install --frozen-lockfile
+      - name: Lint (ESLint)
+        run: pnpm lint
+      - name: Format (Prettier)
+        run: pnpm format:check
+      - name: Typen (tsc)
+        run: pnpm typecheck
+      - name: Tests (Vitest, Server gegen Postgres 18)
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Image (nur Kern, Ziel runtime)
+        run: docker build --target runtime --build-arg GIT_SHA="$GITHUB_SHA" -t seatmeter:ci .

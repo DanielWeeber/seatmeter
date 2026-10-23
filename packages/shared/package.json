@@ -1,0 +1,27 @@
+{
+  "name": "@seatmeter/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Gemeinsame zod-Schemas, Typen, Preislogik, Repo-URL-Normalisierung und HMAC-Helfer",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./hmac": {
+      "types": "./dist/hmac.d.ts",
+      "default": "./dist/hmac.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

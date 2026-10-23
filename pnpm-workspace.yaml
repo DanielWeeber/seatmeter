@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+
+# pnpm 10 führt Install-Skripte nur für freigegebene Pakete aus.
+onlyBuiltDependencies:
+  - esbuild
+# argon2 bringt vorgebaute Binärdateien mit (prebuilds); sein Install-Skript wird nicht gebraucht.
+ignoredBuiltDependencies:
+  - argon2
