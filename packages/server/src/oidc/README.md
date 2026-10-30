@@ -12,6 +12,7 @@ Authorization Code mit PKCE (S256), `openid-client` 6, Client-Authentifizierung 
 | `SEATMETER_OIDC_SCOPES` | Standard `openid profile email groups` |
 | `SEATMETER_OIDC_BEZEICHNUNG` | Knopf „Mit <Bezeichnung> anmelden“, Standard `SSO` |
 | `SEATMETER_OIDC_GRUPPEN` | JSON `{ "<gruppe>": { "mandant": "<slug>", "rolle": "<rolle>" } \| { "plattform_admin": true } \| [ … ] }` |
+| `SEATMETER_OIDC_PRIVATE_ZIELE` | `1` erlaubt bei OIDC je Mandant auch interne Ziele (Tests, On-Prem); sonst sind private, Loopback-, Link-Local- und Metadaten-Adressen gesperrt (`ziel-schutz.ts`) |
 
 - `GET /api/v1/auth/oidc/start[?ziel=/pfad]`: state, nonce und PKCE-Verifier im verschlüsselten Cookie `seatmeter_oidc` (AES-GCM unter dem Master-Schlüssel, 10 Minuten, Pfad `/api/v1/auth/oidc`), 302 zum Provider.
 - `GET /api/v1/auth/oidc/callback`: Token-Tausch mit Prüfung von state, nonce und PKCE; fehlen E-Mail oder Gruppen im ID-Token, kommen sie aus Userinfo. Konto: zuerst über `benutzer.oidc_sub`, sonst über den Anmeldenamen = E-Mail (nur ohne `email_verified = false`; so wird das Konto aus dem Header-Modus übernommen), sonst neu (`login = oidc`). Danach normale Sitzung (`benutzer_sitzung.quelle = 'oidc'`) und 302 ins Dashboard. Fehler: 400 `oidc_zustand`, 401 `oidc_abgelehnt`, 403 `konto_gesperrt`, 502 `oidc_provider`.

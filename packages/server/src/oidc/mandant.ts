@@ -9,6 +9,7 @@ import { withMandant } from '../db/mandant.js';
 import { entschluessele } from '../krypto.js';
 import { ROLLEN, type Rolle } from '@seatmeter/shared';
 import * as oidc from 'openid-client';
+import { geschuetztesFetch } from './ziel-schutz.js';
 import { VERWALTUNG_AUDIT } from '../mandant/verwaltung.js';
 import { domainAusEmail, domainVerifiziert } from '../konten/domains.js';
 import type { Verwaltung } from '../mandant/verwaltung.js';
@@ -87,15 +88,20 @@ export function entdecken(
   e: { issuer: string; clientId: string; secret: string },
   timeout = 10,
 ): Promise<oidc.Configuration> {
-  return oidc.discovery(
-    new URL(e.issuer),
-    e.clientId,
-    undefined,
-    oidc.ClientSecretBasic(e.secret),
-    e.issuer.startsWith('http://')
-      ? { execute: [oidc.allowInsecureRequests], timeout }
-      : { timeout },
-  );
+  return oidc
+    .discovery(
+      new URL(e.issuer),
+      e.clientId,
+      undefined,
+      oidc.ClientSecretBasic(e.secret),
+      e.issuer.startsWith('http://')
+        ? { execute: [oidc.allowInsecureRequests], timeout, [oidc.customFetch]: geschuetztesFetch }
+        : { timeout, [oidc.customFetch]: geschuetztesFetch },
+    )
+    .then((konfig) => {
+      konfig[oidc.customFetch] = geschuetztesFetch;
+      return konfig;
+    });
 }
 
 /** Discovery-Clients je Mandant, 5 Minuten gültig; eine geänderte Konfiguration gilt sofort. */

@@ -12,6 +12,7 @@ export default defineProject({
     ],
   },
   test: {
+    env: { SEATMETER_OIDC_PRIVATE_ZIELE: '1' },
     name: 'server',
     include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
     globalSetup: ['test/global-setup.ts'],
