@@ -165,6 +165,15 @@ export const kennzahlenSchema = z.object({
 });
 export type Kennzahlen = z.infer<typeof kennzahlenSchema>;
 
+/** Steht irgendein Wert darin? Ein Betrag ohne Anfragen zählt auch: Er steckt in einer Summe und muss sichtbar sein. */
+export function kennzahlenMitWerten(k: Kennzahlen): boolean {
+  return (
+    k.anfragen !== 0 ||
+    k.schatten_usd_micros !== 0 ||
+    Object.values(k.tokens).some((wert) => wert !== 0)
+  );
+}
+
 export interface ModellZeile extends Kennzahlen {
   model: string;
 }

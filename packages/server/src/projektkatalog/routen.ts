@@ -8,6 +8,7 @@ import {
   katalogEinstellungEingabeSchema,
   katalogImportEingabeSchema,
   katalogZuordnungEingabeSchema,
+  kennzahlenMitWerten,
   monatSchema,
 } from '@seatmeter/shared';
 import type { FastifyInstance } from 'fastify';
@@ -43,6 +44,8 @@ const kostenAbfrage = z.object({
 });
 
 const projekteAbfrage = z.object({ aktiv: z.enum(['0', '1']).default('1') });
+/** In der Spalte Repo der Zeile je Projekt, die keine Nutzung trägt. */
+const CSV_PROJEKTZEILE = 'Projektzeile';
 
 /**
  * Welche Repos die Anmeldung zuordnen darf; `null` = alle. Nur Mandanten-Admins dürfen alle: `projektIds` ist auch
@@ -274,9 +277,12 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
       'Anfragen',
       'Tokens gesamt',
       'Schattenpreis USD',
+      'Eltern-ID',
+      'Summe mit Unterprojekten USD (nicht addieren)',
     ];
     const zeilen = ergebnis.projekte.flatMap((p) => {
-      // Der Pfad als Bezeichnung: `Webshop › AP Login`. Kosten bleiben flach je gewähltem Projekt.
+      // Der Pfad als Bezeichnung: `Webshop › AP Login`. Die Betragsspalten zählen nur das Eigene und ergeben die Summe der
+      // Seite. Die Projektzeile trägt Hierarchie und Summe und lässt die Betragsspalten leer.
       const anfang = [
         ergebnis.monat,
         csvText(p.nummer),
@@ -285,6 +291,16 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
         csvText(p.kunde),
       ];
       return [
+        [
+          ...anfang,
+          csvText(CSV_PROJEKTZEILE),
+          '',
+          '',
+          '',
+          '',
+          csvText(p.eltern_externe_id),
+          mikroGenau(p.summe.schatten_usd_micros),
+        ],
         ...p.repos.map((r) => [
           ...anfang,
           csvText(r.name),
@@ -292,6 +308,8 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
           r.anfragen,
           r.tokens.gesamt,
           mikroGenau(r.schatten_usd_micros),
+          '',
+          '',
         ]),
         ...(p.sitzungen_ohne_repo > 0
           ? [
@@ -302,6 +320,8 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
                 p.ohne_repo.anfragen,
                 p.ohne_repo.tokens.gesamt,
                 mikroGenau(p.ohne_repo.schatten_usd_micros),
+                '',
+                '',
               ],
             ]
           : []),
@@ -317,9 +337,12 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
         r.anfragen,
         r.tokens.gesamt,
         mikroGenau(r.schatten_usd_micros),
+        '',
+        '',
       ]),
     );
-    if (ergebnis.offen.ohne_repo.anfragen > 0) {
+    // Auch ein Betrag ohne Anfragen, sonst stimmt die Datei nicht mehr mit der Summe der Seite überein.
+    if (kennzahlenMitWerten(ergebnis.offen.ohne_repo)) {
       const o = ergebnis.offen.ohne_repo;
       zeilen.push([
         ...offenAnfang,
@@ -328,6 +351,8 @@ export function katalogRouten(app: FastifyInstance, ctx: PluginKontext) {
         o.anfragen,
         o.tokens.gesamt,
         mikroGenau(o.schatten_usd_micros),
+        '',
+        '',
       ]);
     }
     return reply

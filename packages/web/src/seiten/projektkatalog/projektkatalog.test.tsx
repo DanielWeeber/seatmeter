@@ -9,6 +9,7 @@ import {
   projektwahlAntwortSchema,
   type KatalogEinstellung,
   type KatalogKostenAntwort,
+  type KatalogKostenProjekt,
   type KatalogKurz,
   type KatalogListe,
   type KatalogToken,
@@ -20,8 +21,10 @@ import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { TEXT_NUR_PROJEKTWAHL } from '../../auth/AuthTor';
 import { ssoStart } from '../../auth/Formulare';
+import { usdAusMikro } from '../../format';
 import { json, kennzahlen, ME_ADMIN, ME_LESER, MONAT, rendereApp } from '../../test/index';
 import { AUSWAHL_MAX_TREFFER, filtereBaum, ProjektAuswahl, projektText } from './ProjektAuswahl';
+import { KOSTEN_SCHRITT, KostenBaum, TEXT_SUMME_EIGENE } from './ProjektKosten';
 import {
   TEXT_BREMSE,
   TEXT_DEAKTIVIERUNG_UEBERSPRUNGEN,
@@ -127,9 +130,14 @@ const KOSTEN = {
       ],
       ohne_repo: kennzahlen({ input: 100, output: 0, cache_read: 0, cache_write: 0 }, 1, 5_000_000),
       sitzungen_ohne_repo: 1,
+      eltern_externe_id: null,
+      tiefe: 0,
+      summe: kennzahlen({ input: 1000, output: 0, cache_read: 0, cache_write: 0 }, 3, 35_000_000),
       ...kennzahlen({ input: 1000, output: 0, cache_read: 0, cache_write: 0 }, 3, 35_000_000),
     },
   ],
+  gesamt: kennzahlen({ input: 1050, output: 0, cache_read: 0, cache_write: 0 }, 4, 36_000_000),
+  eingeschraenkt: false,
   offen: {
     repos: [
       {
@@ -716,11 +724,152 @@ describe('Seite Projektkosten (Auswertung)', () => {
 
   it('zeigt Projekt mit Repos, Sitzungen ohne Repo, Offenes und den Export', async () => {
     rendereApp(`/projektkosten?monat=${MONAT}`, routen);
-    expect(await screen.findByText('P-100 – Webshop')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /P-100 – Webshop/ }));
+    expect(screen.getByRole('table', { name: 'Repos von P-100' })).toBeTruthy();
     expect(screen.getByText(/Ohne Repo: 1 Sitzungen/)).toBeTruthy();
     expect(screen.getByRole('table', { name: 'Repos ohne Projekt' })).toBeTruthy();
     const csv = screen.getByRole('link', { name: 'Projektkosten als CSV herunterladen' });
     expect(csv.getAttribute('href')).toContain('format=csv');
+  });
+
+  it('Betrag ohne Anfragen im Offenen steht auf der Seite, die Summe passt dazu', async () => {
+    const rest = kennzahlen({ input: 0, output: 0, cache_read: 0, cache_write: 0 }, 0, 6_000_000);
+    rendereApp(`/projektkosten?monat=${MONAT}`, {
+      ...routen,
+      [`/api/v1/projektkatalog/kosten?monat=${MONAT}`]: json({
+        monat: MONAT,
+        quelle: 'monatsabschluss',
+        projekte: [],
+        gesamt: rest,
+        eingeschraenkt: false,
+        offen: { repos: [], ohne_repo: rest },
+      }),
+    });
+    const zeile = await screen.findByText(/Sitzungen ohne Repo und ohne Wahl/);
+    expect(zeile.textContent).toContain(usdAusMikro(6_000_000));
+    expect(screen.getByText(/Gesamt im Monat/).textContent).toContain(usdAusMikro(6_000_000));
+  });
+
+  describe('Baum', () => {
+    const k = (euro: number, anfragen = 1) =>
+      kennzahlen(
+        { input: euro * 10, output: 0, cache_read: 0, cache_write: 0 },
+        anfragen,
+        euro * 1_000_000,
+      );
+    const projekt = (
+      externeId: string,
+      name: string,
+      eigene: number,
+      summe: number,
+      eltern: string | null,
+      tiefe: number,
+      extra: Partial<KatalogKostenProjekt> = {},
+    ): KatalogKostenProjekt => ({
+      externe_id: externeId,
+      nummer: externeId.toUpperCase(),
+      name,
+      pfad: name,
+      kunde: null,
+      repos: [],
+      ohne_repo: NULLEN,
+      sitzungen_ohne_repo: 0,
+      eltern_externe_id: eltern,
+      tiefe,
+      summe: k(summe),
+      ...k(eigene),
+      ...extra,
+    });
+    const BAUM_KOSTEN = {
+      monat: MONAT,
+      quelle: 'live',
+      gesamt: k(38),
+      eingeschraenkt: false,
+      offen: { repos: [], ohne_repo: NULLEN },
+      projekte: [
+        projekt('a', 'Eltern ohne Eigenes', 0, 7, null, 0),
+        projekt('a-1', 'Mitte', 3, 7, 'a', 1, {
+          repos: [{ id: R1, name: 'firma/mitte', ...k(3) }],
+        }),
+        projekt('a-1-1', 'Unten', 4, 4, 'a-1', 2),
+        projekt('b', 'Blatt', 31, 31, null, 0),
+      ],
+    } satisfies KatalogKostenAntwort;
+
+    const seite = () =>
+      rendereApp(`/projektkosten?monat=${MONAT}`, {
+        ...routen,
+        [`/api/v1/projektkatalog/kosten?monat=${MONAT}`]: json(BAUM_KOSTEN),
+      });
+
+    it('zugeklappt nur die Wurzeln, je mit eigenen Kosten und Summe; ein Blatt ohne Summe', async () => {
+      seite();
+      const a = await screen.findByRole('button', { name: /A – Eltern ohne Eigenes/ });
+      expect(a.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByRole('button', { name: /B – Blatt/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /A-1 – Mitte/ })).toBeNull();
+      const zeile = a.parentElement as HTMLElement;
+      expect(zeile.textContent).toContain(`Eigene Kosten ${usdAusMikro(0)}`);
+      expect(zeile.textContent).toContain(`Mit Unterprojekten ${usdAusMikro(7_000_000)}`);
+      const blatt = screen.getByRole('button', { name: /B – Blatt/ }).parentElement as HTMLElement;
+      expect(blatt.textContent).toContain(`Eigene Kosten ${usdAusMikro(31_000_000)}`);
+      expect(blatt.textContent).not.toContain('Mit Unterprojekten');
+      // Die Summe der Seite zählt jedes Projekt einmal.
+      expect(screen.getByText(/Gesamt im Monat/).textContent).toContain(usdAusMikro(38_000_000));
+    });
+
+    it('eingeschränkte Sicht: „Summe Ihrer Projekte“ statt Gesamt im Monat', async () => {
+      rendereApp(`/projektkosten?monat=${MONAT}`, {
+        ...routen,
+        [`/api/v1/projektkatalog/kosten?monat=${MONAT}`]: json({
+          ...BAUM_KOSTEN,
+          eingeschraenkt: true,
+        }),
+      });
+      const zeile = await screen.findByText(new RegExp(TEXT_SUMME_EIGENE));
+      expect(zeile.textContent).toContain(usdAusMikro(38_000_000));
+      expect(screen.queryByText(/Gesamt im Monat/)).toBeNull();
+    });
+
+    it('klappt Ebene für Ebene auf und wieder zu, mit Repos dazwischen', async () => {
+      seite();
+      fireEvent.click(await screen.findByRole('button', { name: /A – Eltern ohne Eigenes/ }));
+      const mitte = screen.getByRole('button', { name: /A-1 – Mitte/ });
+      expect((mitte.parentElement as HTMLElement).textContent).toContain(
+        `Mit Unterprojekten ${usdAusMikro(7_000_000)}`,
+      );
+      expect(screen.queryByRole('button', { name: /A-1-1 – Unten/ })).toBeNull();
+      expect(screen.queryByRole('table', { name: 'Repos von A-1' })).toBeNull();
+      fireEvent.click(mitte);
+      expect(mitte.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByRole('table', { name: 'Repos von A-1' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /A-1-1 – Unten/ })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /A – Eltern ohne Eigenes/ }));
+      expect(screen.queryByRole('button', { name: /A-1 – Mitte/ })).toBeNull();
+    });
+
+    it('tausende Projekte: zuerst nur ein Teil der Wurzeln im DOM, Rest auf Knopfdruck, Rendern gemessen', () => {
+      const viele: KatalogKostenProjekt[] = [];
+      for (let w = 0; w < 500; w += 1) {
+        viele.push(projekt(`w${w}`, `Wurzel ${w}`, 1, 5, null, 0));
+        for (let c = 0; c < 4; c += 1) {
+          viele.push(projekt(`w${w}-${c}`, `Kind ${c}`, 1, 1, `w${w}`, 1));
+        }
+      }
+      const a = performance.now();
+      render(<KostenBaum projekte={viele} />);
+      const b = performance.now();
+      console.log(`Kostenbaum ${viele.length} Projekte: erstes Rendern ${(b - a).toFixed(0)} ms`);
+      const wurzeln = () => screen.getAllByRole('button', { name: /Wurzel/ });
+      expect(wurzeln()).toHaveLength(KOSTEN_SCHRITT);
+      fireEvent.click(
+        screen.getByRole('button', { name: /Weitere Projekte anzeigen \(200 von 500\)/ }),
+      );
+      expect(wurzeln()).toHaveLength(2 * KOSTEN_SCHRITT);
+      fireEvent.click(screen.getByRole('button', { name: /Weitere Projekte anzeigen/ }));
+      expect(wurzeln()).toHaveLength(500);
+      expect(screen.queryByRole('button', { name: /Weitere Projekte anzeigen/ })).toBeNull();
+    });
   });
 
   it('nennt abgeschlossene Monate und blendet die Zuordnung für Leser aus', async () => {

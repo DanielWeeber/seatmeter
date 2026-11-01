@@ -1970,7 +1970,7 @@ describe('Verschachtelte Projekte', () => {
     expect((await liste(u, '1')).find((p) => p.externe_id === 'w')?.aktiv).toBe(false);
   });
 
-  it('Kosten: flach je gewähltem Projekt, Pfad als Bezeichnung, nichts doppelt, keine Zwischensummen', async () => {
+  it('Kosten: je Projekt das Eigene, Pfad als Bezeichnung, Summe beim Elternprojekt, nichts doppelt', async () => {
     const u = await umgebung();
     await baumAnlegen(u);
     const alle = await liste(u);
@@ -2002,6 +2002,8 @@ describe('Verschachtelte Projekte', () => {
       ['Webshop', 3_000_000],
       ['Webshop › AP Login', 2_000_000],
     ]);
+    expect(k.projekte.map((p) => p.summe.schatten_usd_micros)).toEqual([5_000_000, 2_000_000]);
+    expect(k.gesamt.schatten_usd_micros).toBe(5_000_000);
     const csv = await app.inject({
       url: `/api/v1/projektkatalog/kosten?monat=${MONAT}&format=csv`,
       headers: u.admin,
@@ -2039,7 +2041,10 @@ describe('Verschachtelte Projekte', () => {
     const zeilen = csv.body.trim().split(/\r?\n/);
     expect(zeilen[0]).toContain('Externe ID');
     const spalte = (zeilen[0] ?? '').split(/[;,]/).indexOf('Externe ID');
-    const ids = zeilen.slice(1).map((z) => z.split(/[;,]/)[spalte]?.replace(/"/g, ''));
+    const ids = zeilen
+      .slice(1)
+      .filter((z) => !z.includes('Projektzeile'))
+      .map((z) => z.split(/[;,]/)[spalte]?.replace(/"/g, ''));
     expect(ids.filter(Boolean).sort()).toEqual(['x', 'y']);
 
     await setzen(u, { stufe: 'blockieren' });

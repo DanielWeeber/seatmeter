@@ -57,7 +57,7 @@ export function ProjektDetail() {
         {(d) => {
           const leer = d.anfragen === 0 && d.nach_modell.length === 0 && d.nach_tag.length === 0;
           const repository =
-            d.projekt.id === null ? LEER : (d.projekt.url_norm ?? 'nur als Hash bekannt');
+            d.projekt.id === null ? LEER : (d.projekt.url_norm ?? 'kein Repo (Pfad-Projekt)');
           return (
             <>
               <div className="mt-4">

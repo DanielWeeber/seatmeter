@@ -188,7 +188,7 @@ Projekte dürfen verschachtelt sein, zum Beispiel Arbeitspakete unter einem Proj
 - **Inaktiv:** Ein aktives Kind unter einem inaktiven Elternprojekt bleibt wählbar; das Elternprojekt steht ausgegraut und nicht wählbar darüber, in der Standardansicht und in der Suche. Ein inaktiver Eintrag ohne Aktives darunter steht nirgends in der Auswahl, auch nicht in der Suche. Ein Elternprojekt zu deaktivieren ändert weder seine Kinder noch Zuordnungen.
 - **Reihenfolge:** Wurzeln nach Name, damit auch tausende Wurzeln bedienbar bleiben; Geschwister nach Nummer. Ein Elternprojekt, das nie gesendet wurde, macht sein Kind zur Wurzel.
 - **Schlechte Daten** brechen nichts: Ein unbekanntes Elternprojekt, ein Selbstbezug oder ein Zyklus ergibt die oberste Ebene, und ab 20 Ebenen beginnt eine neue Wurzel. Das Elternprojekt darf später ankommen.
-- **Kosten** bleiben flach je gewähltem Projekt, mit dem Pfad als Bezeichnung auf der Seite und in der CSV. Summen über ein Elternprojekt gibt es nicht; so zählt nichts doppelt.
+- **Kosten:** Jede Ebene ist wählbar, darum zeigt die Kostenseite den Baum und je Projekt die eigenen Kosten und die Summe mit Unterprojekten (Abschnitt 6). Gezählt wird beim gewählten Projekt; die Summe ist abgeleitet, so zählt nichts doppelt.
 
 ## 4. Repos zuordnen
 
@@ -259,7 +259,17 @@ docker compose -f deploy/compose.yml exec -T server \
 
 ## 6. Kosten ansehen
 
-**Auswertung → Projektkosten** zeigt je Projekt Tokens und Schattenpreis, aufklappbar je Repo, dazu die Sitzungen ohne Repo. Darunter steht, was noch keinem Projekt zugeordnet ist. CSV-Export über den Knopf am Seitenende; das Offene steht dort ohne Projektnummer und die Beträge haben sechs Nachkommastellen, damit die Datei genau die Summe der Seite ergibt. Mandanten-Admin, Controller und Projektleitung (nur eigene Repos, ohne Sitzungen ohne Repo).
+**Auswertung → Projektkosten** zeigt den Katalog als aufklappbaren Baum, Wurzeln nach Name, Geschwister nach Nummer. Oben steht das Gesamt des Monats. Je Projekt:
+
+- **Eigene Kosten:** was diesem Projekt zugeordnet ist, Repos und Sitzungen ohne Repo. Beim Aufklappen stehen die Repos und die Unterprojekte darunter, bei sehr vielen Projekten je Ebene zunächst 200.
+- **Mit Unterprojekten:** die eigenen Kosten plus alle Nachfahren, nur bei Projekten mit Unterprojekten. Diese Summe ist abgeleitet: Das Gesamt der Seite addiert nur die eigenen Kosten, und so zählt nichts doppelt.
+- **Was erscheint:** Projekte mit Zuordnung im Monat und alle ihre Vorfahren, auch ohne eigene Nutzung und auch inaktive. Ein Elternprojekt, das nie gesendet wurde, hat keine Zeile, seine Kinder stehen oben. Zyklen und die Tiefengrenze ergeben neue Wurzeln.
+- **Projektleitung:** sieht nur eigene Repos, ohne Sitzungen ohne Repo. Summen enthalten nur, was sie sehen darf. Ein Projekt, dessen Elternprojekt sie nicht leitet, steht bei ihr oben, auch wenn weiter oben wieder ein eigenes Projekt liegt. Beträge, Repos und Summen fremder Projekte bleiben verborgen. Projektnamen nicht: Der Pfad als Bezeichnung kann den Namen eines Elternprojekts nennen, das sie nicht leitet, und die Katalogliste nennt alle Projekte. Das ist Absicht, denn auch die Auswahlseite zeigt allen Beschäftigten den aktiven Katalog.
+- **Abgeschlossene Monate:** Der Monatsabschluss friert Elternprojekt und Pfad mit ein. Späteres Umhängen oder Umbenennen ändert ihn nicht, ein erzwungener neuer Abschluss nimmt die dann aktuelle Hierarchie. Monate, die vor dieser Funktion abgeschlossen wurden, kennen kein Elternprojekt und zeigen flach.
+
+Darunter steht, was noch keinem Projekt zugeordnet ist. Mandanten-Admin, Controller und Projektleitung.
+
+**CSV-Export** über den Knopf am Seitenende. Die Spalte `Schattenpreis USD` hat sechs Nachkommastellen und ergibt in der Summe genau das Gesamt der Seite, auch mit dem Offenen, das ohne Projektnummer steht. Je Projekt kommt eine `Projektzeile` hinzu (in der Spalte `Repo`): Dort sind die Betragsspalten leer, dafür stehen dort `Eltern-ID` und `Summe mit Unterprojekten USD (nicht addieren)`. Diese beiden Spalten sind auf allen anderen Zeilen leer. Die Summe nicht addieren: Sie enthält die Kinder, die eigene Zeilen haben.
 
 Die Seite **Projekte** zeigt für zugeordnete Repos Nummer, Name und Kunde aus dem Katalog; die Repo-URL bleibt sichtbar. Budgets und Projektpreise rechnen weiter je Repo. Nutzung aus Ordnern ohne Repo steht dort unter „unzugeordnet“, auch wenn sie über die Sitzung einem Projekt zugerechnet ist.
 

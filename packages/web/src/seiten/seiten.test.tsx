@@ -107,6 +107,17 @@ describe('Projekte', () => {
     expect(screen.getByText('1,50 $')).toBeTruthy();
   });
 
+  it('ein Pfad-Projekt hat keine Repo-URL und sagt das, statt einen Hash zu behaupten', async () => {
+    rendereApp(`/projekte/${PROJEKT_ID}${q}`, {
+      [`/api/v1/projekte/${PROJEKT_ID}${q}`]: json({
+        ...PROJEKT_DETAIL,
+        projekt: { ...PROJEKT_DETAIL.projekt, url_norm: null },
+      }),
+    });
+    expect(await screen.findByText('kein Repo (Pfad-Projekt)')).toBeTruthy();
+    expect(screen.queryByText(/Hash/)).toBeNull();
+  });
+
   it('zeigt Issues mit Anteil, Rest ohne Schlüssel und CSV-Link', async () => {
     rendereApp(`/projekte/${PROJEKT_ID}${q}`, {
       [`/api/v1/projekte/${PROJEKT_ID}${q}`]: json(PROJEKT_DETAIL),

@@ -441,6 +441,14 @@ export const katalogKostenProjektSchema = kennzahlenSchema.extend({
   /** Über die Sitzungs-ID zugeordnete Nutzung aus Ordnern ohne Repo. */
   ohne_repo: kennzahlenSchema,
   sitzungen_ohne_repo: z.number(),
+  /** Elternprojekt in dieser Sicht; `null` = oberste Ebene, auch wenn das Elternprojekt hier nicht sichtbar ist. */
+  eltern_externe_id: z.string().nullable(),
+  tiefe: z.number(),
+  /**
+   * Eigene Kennzahlen plus alle Nachfahren dieser Sicht. Nur zum Anzeigen, nicht addieren: Die Kennzahlen des Projekts selbst
+   * zählen nur das Eigene, ihre Summe über alle Projekte ist die Summe der Seite.
+   */
+  summe: kennzahlenSchema,
 });
 export type KatalogKostenProjekt = z.infer<typeof katalogKostenProjektSchema>;
 
@@ -449,7 +457,12 @@ export const katalogKostenAntwortSchema = z.object({
   monat: monatSchema,
   /** `monatsabschluss`: Stand beim Monatsabschluss, spätere Zuordnungen ändern ihn nicht. */
   quelle: z.enum(['live', 'monatsabschluss']),
+  /** In Baumreihenfolge: Eltern vor Kindern. Auch Eltern ohne eigene Nutzung, wenn ein Nachfahre welche hat. */
   projekte: z.array(katalogKostenProjektSchema),
+  /** Alle Projekte und das Offene dieser Sicht, je einmal gezählt. */
+  gesamt: kennzahlenSchema,
+  /** Die Sicht ist auf eigene Projekte beschränkt: `gesamt` ist dann nicht die Summe des Monats. */
+  eingeschraenkt: z.boolean(),
   offen: z.object({
     /** Repos mit Nutzung im Monat und ohne Zuordnung. */
     repos: z.array(katalogKostenRepoSchema),

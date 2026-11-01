@@ -636,6 +636,8 @@ export interface KatalogAbschlussTabelle {
   nummer: string;
   name: string;
   pfad: string | null;
+  /** Aufgelöstes Elternprojekt beim Abschluss; leer = oberste Ebene oder Abschluss vor Migration 0031. */
+  parent_externe_id: string | null;
   kunde: string | null;
   projekt_id: string | null;
   projekt_name: string | null;

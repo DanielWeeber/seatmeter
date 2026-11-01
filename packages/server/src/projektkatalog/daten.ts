@@ -214,7 +214,7 @@ function mitAnzeigeNummer<T extends { externe_id: string; nummer: string | null 
   return { ...z, nummer: z.nummer ?? z.externe_id };
 }
 
-async function baumLaden(trx: KatalogTrx) {
+export async function katalogBaumLaden(trx: KatalogTrx) {
   const zeilen = await trx
     .selectFrom('katalog_projekt')
     .select([
@@ -235,7 +235,7 @@ async function baumLaden(trx: KatalogTrx) {
 
 /** Pfad je Katalog-Projekt, z. B. `Webshop › AP Login`, für Kosten, Zuordnung und Bestätigung. */
 export async function katalogPfade(trx: KatalogTrx): Promise<Map<string, string>> {
-  const baum = await baumLaden(trx);
+  const baum = await katalogBaumLaden(trx);
   return new Map(baum.map((z) => [z.projekt.id, katalogPfadText(z.pfad)]));
 }
 
@@ -247,7 +247,7 @@ export async function projekteLaden(
   trx: KatalogTrx,
   nurAktive: boolean,
 ): Promise<KatalogProjekt[]> {
-  const baum = await baumLaden(trx);
+  const baum = await katalogBaumLaden(trx);
   const zeilen = nurAktive ? katalogBaumFiltern(baum, (p) => p.aktiv) : baum;
   return zeilen.map(({ projekt: p, pfad }) => ({
     id: p.id,

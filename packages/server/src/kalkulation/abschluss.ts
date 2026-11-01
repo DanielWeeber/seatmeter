@@ -3,7 +3,7 @@
 // Einstellungen und Preisversion fest. Idempotent: ein vorhandener Abschluss bleibt, außer `erzwingen`
 // (nur Mandanten-Admin per API); beides steht im `audit`.
 import type { KalkulationAntwort, ProjektpreisZeile } from '@seatmeter/shared';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
 import { heuteIn } from '../aggregation/tage.js';
 import type { Db } from '../db/db.js';
@@ -26,6 +26,8 @@ type Trx = Transaction<Datenbank>;
 
 export type AbschlussStatus = 'angelegt' | 'vorhanden' | 'ueberschrieben';
 
+const JE_EINFUEGEN = 500;
+
 export interface AbschlussErgebnis {
   monat: string;
   status: AbschlussStatus;
@@ -41,6 +43,11 @@ export async function schliesseMonat(
 ): Promise<AbschlussErgebnis> {
   return withMandant(db, mandantId, async (trx) => {
     const tag = monatsTag(monat);
+    // Vor dem ersten Lesen: Zwei gleichzeitige Abschlüsse sähen sonst beide den alten Stand und schrieben beide, und die
+    // Beträge stünden doppelt da.
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`monatsabschluss:${mandantId}:${tag}`}, 0))`.execute(
+      trx,
+    );
     const vorhanden = await trx
       .selectFrom('monatsabschluss')
       .select((eb) => eb.fn.countAll<number>().as('n'))
@@ -54,11 +61,12 @@ export async function schliesseMonat(
     await katalogAbschlussSchreiben(trx, mandantId, monat);
     if (alt > 0) await trx.deleteFrom('monatsabschluss').where('monat', '=', tag).execute();
     const kursText = k.kurs.usd_eur === null ? null : k.kurs.usd_eur.toFixed(6);
-    if (k.zeilen.length > 0) {
+    // In Teilen: Ein einziges INSERT stößt ab rund 2 400 Zeilen an die Grenze von 65 535 Parametern.
+    for (let i = 0; i < k.zeilen.length; i += JE_EINFUEGEN) {
       await trx
         .insertInto('monatsabschluss')
         .values(
-          k.zeilen.map((z) => ({
+          k.zeilen.slice(i, i + JE_EINFUEGEN).map((z) => ({
             mandant_id: mandantId,
             monat: tag,
             projekt_id: z.projekt_id,

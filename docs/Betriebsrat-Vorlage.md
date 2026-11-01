@@ -40,7 +40,7 @@ Warum überhaupt Personenbezug? Sitzkosten fallen je Person an. Um sie auf Proje
 | Token-Zähler           | je Anfrage: Input, Output, Cache lesen, Cache schreiben (5 min/1 h)                                                                          | Schattenpreis, Projektpreis               |
 | Modell und Merkmale    | Modellname, Geschwindigkeitsmodus, Rechenregion, Subagent ja/nein, von Claude Code gemeldete Kosten                                          | Preisberechnung, Kontrolle                |
 | Zeitpunkt je Anfrage   | gespeichert (90 Tage) für Tageszuordnung, Abgleich der Quellen und Monatsgrenzen; **nie als Stunden- oder Uhrzeitsicht je Person angezeigt** | Zuordnung zu Tag und Monat                |
-| Projekt                | normalisierte Repo-URL (ohne Zugangsdaten), Owner, Repo-Name; Option „nur Hash“ mit eigenem Anzeigenamen                                     | Zuordnung zum Projekt                     |
+| Projekt                | normalisierte Repo-URL (ohne Zugangsdaten), Owner, Repo-Name, im Klartext gespeichert; Mandanten-Admin, Controller und Betriebsrat sehen alle Repos mit URL und Beträgen, Projektleitung die zugewiesenen, `entwickler` keine Liste (Abschnitt 8)                                     | Zuordnung zum Projekt                     |
 | Projektzuordnung       | optional: Repo → Projekt aus dem Projektkatalog, in Ordnern ohne Repo Sitzungs-ID → Projekt; nicht, wer gewählt hat                          | Kosten je Projekt                       |
 | Person                 | nur als Pseudonym (Abschnitt 5), Anzeige als Kurzcode `P-XXXXXX`; Sitztyp (z. B. Standard, Premium)                                          | Sitzkosten-Verteilung                     |
 | Technische Kennungen   | Sitzungs- und Anfrage-ID von Claude Code                                                                                                     | doppelte Zählung vermeiden                |
@@ -108,10 +108,11 @@ Standardfristen (je Unternehmen änderbar; jede Änderung wird protokolliert und
 
 | Rolle                       | Darf                                                                                                                                         |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mandanten-Admin             | Einstellungen, Organisationen, Tokens, Preise, Sitzkosten, Auswertungsstufe, Klarnamen, Benutzer; Personensichten gemäß Stufe                |
-| Controller                  | alle Projekte als Summen, keine Personen                                                                                                     |
-| Projektleiter               | nur zugewiesene Projekte; Personensichten gemäß Stufe nur für diese Projekte                                                                 |
-| Betriebsrat                 | Betriebsrats-Bericht, Zugriffsprotokoll, Einstellungen lesen; keine Personensichten, keine Kalkulation                                       |
+| Mandanten-Admin | Einstellungen, Organisationen, Tokens, Preise, Sitzkosten, Auswertungsstufe, Klarnamen, Benutzer; alle Repos mit URL und Beträgen; Personensichten gemäß Stufe |
+| Controller | alle Repos mit URL und Beträgen, Projektpreise; keine Personen |
+| Projektleiter | nur zugewiesene Projekte und Repos mit URL und Beträgen; Personensichten gemäß Stufe nur für diese Projekte |
+| Betriebsrat | Betriebsrats-Bericht, Zugriffsprotokoll, Einstellungen lesen; alle Repos mit URL, Tokens und Schattenpreis je Repo (Seite Projekte); keine Personensichten, keine Projektpreise mit Sitzkosten-Anteil |
+| `entwickler` | nur die Auswahlseite der Projektwahl: den Namen des Repos, für das gewählt wird, und den aktiven Katalog; keine Repo-Liste, keine Beträge, keine Auswertungen |
 | Plattform-Admin (nur Mehrmandantenbetrieb) | Mandanten anlegen; sieht jeden Mandanten nur als Summen, keine Personensichten; Zugriffe stehen im Protokoll des Mandanten |
 
 - **Jede Personensicht, jeder Export und jede Ansicht eines Berichts** wird im Audit protokolliert: wer, wann, was. Das Öffnen des Betriebsrats-Berichts im Dashboard oder als HTML-Seite steht als „Ansicht“ (mit Berichtsart und Zeitraum, ohne Inhalte), der CSV-Download als „Export“. Das Protokoll enthält keine Daten der gezählten Personen.

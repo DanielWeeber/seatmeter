@@ -316,8 +316,8 @@ describe('Zuordnung und Kosten', () => {
     await zuordnen(u, b, ids['P-200'] ?? null);
     k = await kosten(u);
     expect(k.projekte.map((x) => [x.nummer, x.schatten_usd_micros])).toEqual([
-      ['P-100', 3 * M],
       ['P-200', 2 * M],
+      ['P-100', 3 * M],
     ]);
     await zuordnen(u, b, null);
     k = await kosten(u);
@@ -525,7 +525,10 @@ describe('Zuordnung und Kosten', () => {
       .trim()
       .split(/\r?\n/)
       .slice(1)
-      .map((z) => z.split(';').at(-1) ?? '');
+      // Die Betragsspalte, ohne die Projektzeile: Dort ist sie leer.
+      .map((z) => z.split(';'))
+      .filter((z) => z[5] !== 'Projektzeile')
+      .map((z) => z[9] ?? '');
     expect(betraege).toEqual(Array(5).fill('0,002200'));
     const summe = betraege.reduce((n, b) => n + Math.round(Number(b.replace(',', '.')) * 1e6), 0);
     expect(summe).toBe(micros);
