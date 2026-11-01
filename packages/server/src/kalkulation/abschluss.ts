@@ -10,6 +10,7 @@ import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import type { Datenbank } from '../db/schema.js';
 import type { PluginKontext } from '../plugin.js';
+import { katalogAbschlussSchreiben } from '../projektkatalog/kosten.js';
 import { monatsTag, plusMonate } from './kurs.js';
 import {
   kalkuliereMonat,
@@ -49,6 +50,8 @@ export async function schliesseMonat(
     if (alt > 0 && !optionen.erzwingen) return { monat, status: 'vorhanden', zeilen: alt };
 
     const k = await kalkuliereMonat(trx, monat, null, optionen.jetzt);
+    // Zuordnung Repo → Katalog-Projekt und deren Kosten mit einfrieren (Modul projektkatalog).
+    await katalogAbschlussSchreiben(trx, mandantId, monat);
     if (alt > 0) await trx.deleteFrom('monatsabschluss').where('monat', '=', tag).execute();
     const kursText = k.kurs.usd_eur === null ? null : k.kurs.usd_eur.toFixed(6);
     if (k.zeilen.length > 0) {

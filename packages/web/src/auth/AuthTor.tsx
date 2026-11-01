@@ -6,12 +6,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
+import { nurEntwickler, PROJEKTWAHL_PFAD_PRAEFIX } from '@seatmeter/shared';
 import { z } from 'zod';
 import { ApiFehler, ME_PFAD, useApi } from '../api/client';
 import { authMeSchema, setupStatusSchema, type AuthMe, type Rolle } from '../api/typen';
 import { Fehlermeldung, Laden } from '../komponenten/Abfrage';
 import { Einladung, EINLADUNG_PFAD } from './Einladung';
 import { Anmeldung, Einrichtung } from './Formulare';
+
+function istProjektwahlPfad(pfad: string): boolean {
+  return pfad.startsWith(PROJEKTWAHL_PFAD_PRAEFIX);
+}
 
 /** Rolle mit Schreibrecht auf Preise, Sitzkosten und Rechner (server: requireRolle('mandanten_admin')). */
 export const ADMIN_ROLLE: Rolle = 'mandanten_admin';
@@ -75,6 +80,84 @@ export function AnmeldeBanner() {
     >
       Anmeldung im Server noch nicht aktiv.
     </p>
+  );
+}
+
+export const TEXT_NUR_PROJEKTWAHL =
+  'Dieses Konto darf in seatmeter nur Projekte wählen. Den Link dazu zeigt Claude Code an, wenn für ein ' +
+  'Repo noch kein Projekt festgelegt ist.';
+
+/** Mandantenwechsel über `POST /api/v1/auth/mandant`; danach laden alle Abfragen neu. */
+export function MandantWahl() {
+  const { me } = useAuth();
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const wechseln = useMutation({
+    mutationFn: (mandantId: string) =>
+      api.post('/api/v1/auth/mandant', { mandant_id: mandantId }, authMeSchema),
+    onSuccess: (neu) => {
+      api.merkeCsrf(neu.csrf);
+      void queryClient.invalidateQueries();
+    },
+  });
+  if (!me) return null;
+  if (me.mandanten.length < 2)
+    return me.mandant ? (
+      <span>
+        Mandant <span className="font-medium text-slate-900">{me.mandant.name}</span>
+      </span>
+    ) : (
+      <span>Kein Mandant</span>
+    );
+  return (
+    <label className="flex items-center gap-2">
+      Mandant
+      <select
+        aria-label="Aktiver Mandant"
+        value={me.mandant_id ?? ''}
+        disabled={wechseln.isPending}
+        onChange={(e) => wechseln.mutate(e.target.value)}
+        className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
+      >
+        {!me.mandant_id && <option value="">– wählen –</option>}
+        {me.mandanten.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+      {wechseln.isError && (
+        <span role="alert" className="text-red-700">
+          Wechsel fehlgeschlagen.
+        </span>
+      )}
+    </label>
+  );
+}
+
+function NurProjektwahl() {
+  const { me, kannAbmelden, abmelden, abmeldenLaeuft } = useAuth();
+  return (
+    <main className="mx-auto max-w-md p-8">
+      <h1 className="text-xl font-semibold">seatmeter</h1>
+      <p className="mt-2 text-sm text-slate-700">{TEXT_NUR_PROJEKTWAHL}</p>
+      {/* Anderswo darf das Konto vielleicht mehr: ohne Wechsel käme es dort nicht hin. */}
+      {me && me.mandanten.length > 1 && (
+        <div className="mt-4 text-sm">
+          <MandantWahl />
+        </div>
+      )}
+      {kannAbmelden && (
+        <button
+          type="button"
+          className="mt-4 text-sm underline"
+          disabled={abmeldenLaeuft}
+          onClick={abmelden}
+        >
+          Abmelden
+        </button>
+      )}
+    </main>
   );
 }
 
@@ -167,5 +250,12 @@ export function AuthTor({ children }: { children: ReactNode }) {
     abmelden: () => abmelden.mutate(),
     abmeldenLaeuft: abmelden.isPending,
   };
-  return <AuthKontext.Provider value={wert}>{children}</AuthKontext.Provider>;
+  // Rolle `entwickler` allein: nur die Auswahlseite hinter dem Link, kein Dashboard.
+  const nurWahl =
+    !!me && nurEntwickler(me.rollen) && !me.plattform_admin && !istProjektwahlPfad(pathname);
+  return (
+    <AuthKontext.Provider value={wert}>
+      {nurWahl ? <NurProjektwahl /> : children}
+    </AuthKontext.Provider>
+  );
 }

@@ -85,3 +85,36 @@ export function normalisiereRepoUrl(roh: string): RepoInfo | null {
     provider: erkenneProvider(hostKlein),
   };
 }
+
+/**
+ * Form, unter der der Ingest ein Repo speichert. `normalisiereRepoUrl` ist für scp-Remotes nicht idempotent: Ein Umlaut,
+ * `..`, `{}`, `"`, ein Backslash oder ein IDN-Host bleiben im ersten Durchlauf stehen und ändern sich erst, wenn die
+ * `https://`-Form durch `new URL` läuft. Genau das passiert im Ingest, also hier auch: wiederholen, bis nichts mehr ändert.
+ * Bleibt eine Form ohne gültige URL (`new URL` scheitert), gilt der letzte Stand.
+ */
+export function kanonischeRepoInfo(roh: string): RepoInfo | null {
+  let info = normalisiereRepoUrl(roh);
+  for (let i = 0; info && i < 3; i += 1) {
+    const weiter = normalisiereRepoUrl(info.urlNorm);
+    if (!weiter || weiter.urlNorm === info.urlNorm) break;
+    info = weiter;
+  }
+  return info;
+}
+
+/** Bestandteile einer schon normalisierten URL (`https://host/pfad`), ohne sie noch einmal zu verändern. */
+export function repoInfoAusUrlNorm(urlNorm: string): RepoInfo | null {
+  const treffer = /^https:\/\/([^/]+)\/(.+)$/.exec(urlNorm);
+  if (!treffer || treffer[1] === undefined || treffer[2] === undefined) return null;
+  const host = treffer[1].replace(/:\d+$/, '');
+  const teile = treffer[2].split('/');
+  const repoName = teile[teile.length - 1] ?? '';
+  if (repoName === '') return null;
+  return {
+    urlNorm,
+    host,
+    owner: teile.length > 1 ? teile.slice(0, -1).join('/') : null,
+    repoName,
+    provider: erkenneProvider(host),
+  };
+}

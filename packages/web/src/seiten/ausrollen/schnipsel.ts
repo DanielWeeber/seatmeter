@@ -2,7 +2,11 @@
 // Einstellungen, Start-Wrapper und Agent-Befehle aus der Konfiguration des Mandanten. Ohne React,
 // damit jede Ausgabe einzeln testbar ist. Ein echtes Token kommt nur über `token` herein (frisch
 // erzeugtes Mandanten-Token); sonst steht der Platzhalter im Schnipsel.
-import type { AusrollenKonfiguration } from '@seatmeter/shared';
+import {
+  PROJEKTWAHL_TOKEN_VARIABLE,
+  projektwahlHookEinstellung,
+  type AusrollenKonfiguration,
+} from '@seatmeter/shared';
 
 export const TOKEN_PLATZHALTER = '<MANDANTEN-TOKEN>';
 export const EINMALCODE_PLATZHALTER = '<EINMALCODE>';
@@ -25,6 +29,8 @@ export interface SchnipselOptionen {
   agentPfad: string;
   /** `forceLoginMethod`/`forceLoginOrgUUID` setzen (nur mit Organisationen, nur MDM). */
   orgFestlegen: boolean;
+  /** Hook für die erzwungene Projektwahl in die verwalteten Einstellungen schreiben (Modul projektkatalog). */
+  projektwahl?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -153,29 +159,39 @@ function einstellungen(
   k: AusrollenKonfiguration,
   o: SchnipselOptionen,
   mitAnmeldung: boolean,
+  verwaltet: boolean,
 ): string {
-  const s: Record<string, unknown> = { env: otelUmgebung(k, o) };
+  const env = otelUmgebung(k, o);
+  const s: Record<string, unknown> = { env };
   if (o.kopfzeilen === 'helper') s.otelHeadersHelper = helperBefehl(o.agentPfad);
   if (mitAnmeldung && o.orgFestlegen && k.orgs.length > 0) {
     s.forceLoginMethod = 'claudeai';
     s.forceLoginOrgUUID = k.orgs.map((org) => org.org_uuid);
+  }
+  // Erzwingen wirkt nur in verwalteten Einstellungen; in den eigenen Einstellungen ließe sich der Hook entfernen.
+  if (verwaltet && o.projektwahl) {
+    if (o.kopfzeilen === 'fest') env[PROJEKTWAHL_TOKEN_VARIABLE] = o.token || TOKEN_PLATZHALTER;
+    s.hooks = projektwahlHookEinstellung({
+      ingestUrl: k.ingest_url,
+      helperBefehl: o.kopfzeilen === 'helper' ? helperBefehl(o.agentPfad) : null,
+    });
   }
   return `${JSON.stringify(s, null, 2)}\n`;
 }
 
 /** (a) `managed-settings.json` per MDM, auf Wunsch mit Festlegung der Anmeldung auf die Orgs. */
 export function managedSettings(k: AusrollenKonfiguration, o: SchnipselOptionen): string {
-  return einstellungen(k, o, true);
+  return einstellungen(k, o, true, true);
 }
 
 /** (b) Server-Managed Settings (claude.ai Admin): `force*` wirkt dort nicht, daher ohne. */
 export function serverManagedSettings(k: AusrollenKonfiguration, o: SchnipselOptionen): string {
-  return einstellungen(k, o, false);
+  return einstellungen(k, o, false, true);
 }
 
-/** (c) `~/.claude/settings.json` der Person (nicht gesperrt, ohne `force*`). */
+/** (c) `~/.claude/settings.json` der Person (nicht gesperrt, ohne `force*` und ohne Hook). */
 export function benutzerEinstellungen(k: AusrollenKonfiguration, o: SchnipselOptionen): string {
-  return einstellungen(k, o, false);
+  return einstellungen(k, o, false, false);
 }
 
 // ---------------------------------------------------------------------------------------------

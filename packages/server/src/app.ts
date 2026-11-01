@@ -26,7 +26,11 @@ export const logSerializer: NonNullable<
       id: anfrage.id,
       method: anfrage.method,
       // Einladungslinks (`/einladung/<token>`, Modul konten) tragen ein Geheimnis im Pfad: nie ins Log.
-      path: (anfrage.url ?? '').split('?', 1)[0]?.replace(/^\/einladung\/[^/]+/, '/einladung/…'),
+      // Ebenso der signierte Link zur Projektwahl (`/projektwahl/<token>`, Modul projektkatalog).
+      path: (anfrage.url ?? '')
+        .split('?', 1)[0]
+        ?.replace(/^\/einladung\/[^/]+/, '/einladung/…')
+        .replace(/^\/projektwahl\/[^/]+/, '/projektwahl/…'),
     }),
     res: (antwort: { statusCode?: number }) => ({ statusCode: antwort.statusCode }),
   },
@@ -51,6 +55,8 @@ export async function erstelleApp(optionen: AppOptionen): Promise<FastifyInstanc
       ...(optionen.logStream ? { stream: optionen.logStream } : {}),
     },
     bodyLimit: 4 * 1024 * 1024,
+    // Kodierte IDs im Pfad (Katalog-Push) sind länger als die 100 Zeichen des Standards; die Route prüft selbst.
+    routerOptions: { maxParamLength: 8192 },
     // Client-IP (Ratenlimits, Anmelde-Sperre) nur hinter konfiguriertem Proxy aus X-Forwarded-For.
     trustProxy: typeof tp === 'number' ? (_adresse: string, stufe: number) => stufe < tp : tp,
   });

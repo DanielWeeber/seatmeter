@@ -30,9 +30,10 @@ Ein Container `server` (API, Ingest, Dashboard) und ein Postgres 18. Der Server 
 | `SEATMETER_MASTER_KEY` | ja | 32 Byte (Base64/Hex), verschlüsselt Salts und Schlüssel (AES-256-GCM) |
 | `PORT` | nein | Standard 8080 |
 | `LOG_LEVEL` | nein | `info` (Standard), `debug`, `warn` …; Logs enthalten nie Körper, Header-Werte oder IP-Adressen |
-| `SEATMETER_PUBLIC_URL` | empfohlen | Basis-URL des Dashboards, z. B. `https://seatmeter.example.org` |
+| `SEATMETER_PUBLIC_URL` | empfohlen | Basis-URL des Dashboards, z. B. `https://seatmeter.example.org`. Nötig für die erzwungene Projektwahl mit eigenem Ingest-Host: Der Link zur Auswahl zeigt auf diese URL |
 | `SEATMETER_TRUST_REMOTE_USER_HEADER` | nein | Name des Headers (z. B. `Remote-Email`), dem der Server als angemeldetem Benutzer vertraut. **Nur** setzen, wenn ein vorgeschalteter Proxy (z. B. Authelia per `forward_auth`) diesen Header auf allen Dashboard-Pfaden selbst setzt und ihn auf den freien Pfaden entfernt. Dann entfällt die Login-Seite. |
 | `SEATMETER_AUTO_MANDANT` | nein | Slug des Mandanten, dem Proxy-Benutzer ohne eigenes Konto zugeordnet werden |
+| `SEATMETER_AUTO_ROLLE` | nein | Rolle dieser neu angelegten Proxy-Benutzer, Standard `mandanten_admin`. Mit erzwungener Projektwahl `entwickler` setzen, sonst wird jede Person, die dem Link folgt, Admin; die Projektwahl bleibt dann gesperrt (`docs/Projektkatalog.md`) |
 | `SEATMETER_WEB_DIST` | (Image) | Verzeichnis mit dem Dashboard-Build; im Image `/app/web`. Leer = nur API |
 | `SEATMETER_INGEST_URL` | empfohlen | Öffentliche Basis-URL des Ingest-Hosts (z. B. `https://ingest.example.org`) für die Agent-Konfiguration und die Seite „Ausrollen“; ohne sie leitet der Server die URL aus der Anfrage ab (Dashboard-Host, meist falsch für die Rechner) |
 | `SEATMETER_AGENT_RELEASE_URL` | nein | Download-Ordner des Agent-Releases, z. B. `https://<forgejo-host>/<org>/seatmeter/releases/download/v0.1.0`; die Seite „Ausrollen“ baut daraus den Installationsbefehl |
@@ -52,24 +53,51 @@ Pfade und ihr Schutz:
 |---|---|
 | `/otlp/*`, `/api/ingest/*`, `/api/agent/*` | Bearer-Token der App (Mandanten- bzw. Rechner-Token); **ohne** vorgeschaltete Anmeldung, `Remote-*`-Header entfernen |
 | `/api/health`, `/api/health/ingest` | ohne Anmeldung (Monitoring) |
-| alles andere (Dashboard, `/api/v1/*`) | vorgeschaltete Anmeldung (z. B. Authelia `forward_auth`) oder der lokale Login der App |
+| genau `PUT /api/v1/projektkatalog/projekte/*`, `GET /api/v1/projektkatalog/sync-status`, `POST /api/v1/projektkatalog/import/datei` | Token der App (Katalog-Token `smk_…`); **ohne** vorgeschaltete Anmeldung, `Remote-*`-Header entfernen. Ein Quellsystem kann sich nicht anmelden und bricht bei einer Weiterleitung seinen Lauf ab |
+| alles andere (Dashboard, `/api/v1/*`, auch `GET /api/v1/projektkatalog/projekte`) | vorgeschaltete Anmeldung (z. B. Authelia `forward_auth`) oder der lokale Login der App |
 
 Beispiel Caddy mit Authelia (Hostnamen anpassen):
 
 ```caddyfile
+(seatmeter_frei) {
+	reverse_proxy seatmeter-server-1:8080 {
+		header_up -Remote-User
+		header_up -Remote-Groups
+		header_up -Remote-Email
+		header_up -Remote-Name
+	}
+}
+
 seatmeter.example.org {
 	encode zstd gzip
 	request_body {
-		max_size 8MB
+		max_size 20MB
 	}
 	@frei path /otlp/* /api/ingest/* /api/agent/* /api/health /api/health/*
 	handle @frei {
-		reverse_proxy seatmeter-server-1:8080 {
-			header_up -Remote-User
-			header_up -Remote-Groups
-			header_up -Remote-Email
-			header_up -Remote-Name
-		}
+		import seatmeter_frei
+	}
+	# Katalog: Token-Clients ohne Anmeldung, je Route genau eine Methode.
+	@katalog_push {
+		method PUT
+		path /api/v1/projektkatalog/projekte/*
+	}
+	handle @katalog_push {
+		import seatmeter_frei
+	}
+	@katalog_status {
+		method GET
+		path /api/v1/projektkatalog/sync-status
+	}
+	handle @katalog_status {
+		import seatmeter_frei
+	}
+	@katalog_upload {
+		method POST
+		path /api/v1/projektkatalog/import/datei
+	}
+	handle @katalog_upload {
+		import seatmeter_frei
 	}
 	handle {
 		forward_auth authelia:9091 {
@@ -83,7 +111,19 @@ seatmeter.example.org {
 
 Hinter dem Proxy `SEATMETER_TRUST_PROXY=1` setzen, sonst sieht der Server alle Clients unter der Adresse des Proxys (ein gemeinsamer Eimer je IP). Für einen Host über den Cloudflare-Tunnel setzt Caddy `X-Forwarded-For` auf `CF-Connecting-IP` (`header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}`).
 
-Ein eigener öffentlicher Ingest-Host (z. B. `ingest.example.org`) gibt nur `/otlp/*`, `/api/ingest/*`, `/api/agent/*` und `/api/health` weiter und antwortet sonst mit 404; das Dashboard bleibt intern oder hinter einer öffentlichen Anmeldung.
+Ein eigener öffentlicher Ingest-Host (z. B. `ingest.example.org`) gibt nur `/otlp/*`, `/api/ingest/*`, `/api/agent/*`, `/api/health` und die drei Katalog-Routen aus der Tabelle weiter, sonst sendet ein Quellsystem dort ins Leere, und antwortet sonst mit 404; das Dashboard bleibt intern oder hinter einer öffentlichen Anmeldung.
+
+**nginx:** Für die seatmeter-vhosts `proxy_intercept_errors off` setzen: Sonst ersetzt nginx die Fehlerkörper der API durch seine eigenen Seiten und verliert dabei `Retry-After`. `proxy_pass` ohne URI-Teil schreiben, also `proxy_pass http://seatmeter;`, nicht `proxy_pass http://seatmeter/api/;`: Mit URI-Teil normalisiert nginx den Pfad und dekodiert `%2F`, aus der externen ID `P%2F100` würde der Pfad `P/100`, und die Route passt nicht mehr. Geprüft mit nginx 1.30; `client_max_body_size` mindestens auf 20m stellen.
+
+```nginx
+location / {
+    proxy_pass http://seatmeter;
+    proxy_intercept_errors off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
 ## Mandant, Org und Ingest-Token anlegen
 
@@ -96,6 +136,25 @@ docker compose -f deploy/compose.yml exec -T server \
 ```
 
 Das Token steht nur in dieser einen Ausgabe. Nicht im Terminal stehen lassen, sondern direkt in den Passwort-Manager bzw. Schlüsselbund leiten (Zeile mit `smi_` herausfiltern); nie in Repos, Tickets oder `settings.json`.
+
+## Projektkatalog importieren
+
+Im Regelfall sendet das Quellsystem die Projekte selbst (`PUT /api/v1/projektkatalog/projekte/:externalId`, `docs/Projektkatalog.md`). Für den Erstbestand und Läufe von Hand gleicht die CLI `katalog:importieren` den Projektkatalog eines Mandanten mit einer CSV ab. Sie führt keine Migrationen aus. Eine vollständige Liste macht auch gesendete Projekte inaktiv, wenn sie in der Datei fehlen; dann `--teilliste` verwenden.
+
+```sh
+docker compose -f deploy/compose.yml exec -T server \
+  node /app/server/dist/projektkatalog/cli-katalog-importieren.js \
+  --mandant <slug> --datei - --trockenlauf < projekte.csv
+```
+
+Ausgabe sind die Zähler als JSON. Exit-Code 0 = Erfolg, 2 = Erfolg, aber abgelehnte Zeilen oder übersprungenes Deaktivieren, 1 = Fehler, nichts geändert. Der Job gehört in Ihre Überwachung (Heartbeat oder Alarm bei Exit-Code ungleich 0). Von einem anderen Rechner aus geht derselbe Import über `POST /api/v1/projektkatalog/import/datei` mit einem Token vom Zweck `csv_import`. Ob die Synchronisation läuft, meldet `GET /api/v1/projektkatalog/sync-status` (200 oder 503) mit einem Token vom Zweck `sync_status` (empfohlen, nur lesend) oder `katalog_api`.
+
+**Notfall Projektwahl:** Fällt der Identitätsanbieter aus, während die Stufe „Blockieren“ aktiv ist, kommen weder Beschäftigte auf die Auswahlseite noch Admins ins Dashboard. Abschalten ohne Anmeldung:
+
+```sh
+docker compose -f deploy/compose.yml exec -T server \
+  node /app/server/dist/projektkatalog/cli-projektwahl-stufe.js --mandant <slug> --stufe aus
+```
 
 ## Health und Monitoring
 
@@ -133,7 +192,7 @@ Der Server begrenzt die Ingest-Pfade selbst (Token-Buckets im Speicher, eine Ins
 |---|---|---|---|
 | `SEATMETER_RATE_IP` | `12000/1200` | Client-IP | alle Ingest-Pfade, vor der Token-Prüfung |
 | `SEATMETER_RATE_FEHLVERSUCHE` | `30/30` | Client-IP | nur Anfragen ohne gültiges Token (fehlt, unbekannt, widerrufen, falscher Typ). Ist der Vorrat leer, antwortet der Server mit 429, ohne die Datenbank zu fragen; Tokens, die in den letzten 10 min gültig waren, bleiben frei |
-| `SEATMETER_RATE_OTLP` | `3000/300` | Token | `/otlp/v1/*`; je Mandant überschreibbar (`ratenlimit_otlp`) |
+| `SEATMETER_RATE_OTLP` | `3000/300` | Token | `/otlp/v1/*` und `/api/ingest/v1/projektwahl` (Prüfung des Hooks, gibt bei 429 den Prompt frei); je Mandant überschreibbar (`ratenlimit_otlp`) |
 | `SEATMETER_RATE_AGENT` | `300/60` | Rechner | `/api/ingest/v1/*`, `/api/agent/v1/config`, `/api/agent/v1/heartbeat`; je Mandant überschreibbar (`ratenlimit_agent`) |
 | `SEATMETER_RATE_ENROLL` | `10/10` | Client-IP | jeder Versuch auf `POST /api/agent/v1/enroll` |
 | `SEATMETER_RATE_ENROLL_FEHLVERSUCHE` | `1/5` | Client-IP | falsche, abgelaufene oder genutzte Einmalcodes: nach 5 Fehlversuchen 1 je Minute, solange auch für richtige Codes 429 |
@@ -156,6 +215,7 @@ Der Server plant seine Jobs selbst (Cron in UTC, Advisory-Lock, Protokoll in `jo
 | `kalkulation.monatsabschluss` | am 1. um 03:30 | Vormonat je Mandant einfrieren (vorhandene Abschlüsse bleiben) |
 | `aufbewahrung.loeschen` | täglich 02:45 | Löschläufe laut Fristen, protokolliert in `loeschlauf` |
 | `budgets.pruefen` | stündlich, Minute 7 | Budgets gegen Schwellen prüfen, je Schwelle ein Alarm, Zustellung über die Alarmkanäle |
+| `projektkatalog.sync` | stündlich, Minute 25 | Alarm, wenn die Synchronisation des Projektkatalogs ausbleibt, optional nicht mehr gesendete Projekte deaktivieren (mit Bremse), je Tag und Token eine Audit-Zeile. Scheitert ein Mandant, laufen die anderen weiter und der Lauf endet mit Fehler in `job_lauf` |
 | `hinweise.erzeugen` | täglich 04:30 | Projekt-Hinweise des laufenden Monats |
 | `abgleich.analytics` | täglich 05:00 | Analytics API (nur Mandanten mit Key): letzte 8 UTC-Tage → `ueberschreitung`, `abgleich_lauf`; braucht ausgehendes HTTPS zu `api.anthropic.com` |
 

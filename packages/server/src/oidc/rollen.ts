@@ -4,7 +4,7 @@ import { protokolliere } from '../audit/protokoll.js';
 import { rollenDesBenutzers } from '../auth/kontext.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
-import type { Rolle } from '@seatmeter/shared';
+import { nurEntwickler, type Rolle } from '@seatmeter/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import type { GruppenZuordnung } from '../config.js';
 import type { Verwaltung } from '../mandant/verwaltung.js';
@@ -79,6 +79,13 @@ export async function rollenAbgleichen(
         .select(['id', 'rolle', 'quelle'])
         .where('benutzer_id', '=', benutzerId)
         .execute();
+      // Bleibt nur `entwickler`: ohne Konto im Audit, der Abgleich passiert bei der Anmeldung direkt vor der Wahl.
+      const ohneKonto = nurEntwickler([
+        ...wunsch.keys(),
+        ...ist.filter((r) => r.quelle !== 'oidc').map((r) => r.rolle),
+      ]);
+      const akteur = ohneKonto ? null : benutzerId;
+      const ziel = ohneKonto ? '' : `benutzer:${benutzerId} `;
       for (const [rolle, projektIds] of wunsch) {
         if (ist.some((r) => r.rolle === rolle)) continue;
         await trx
@@ -93,18 +100,18 @@ export async function rollenAbgleichen(
           .onConflict((oc) => oc.columns(['mandant_id', 'benutzer_id', 'rolle']).doNothing())
           .execute();
         await protokolliere(trx, {
-          benutzerId,
+          benutzerId: akteur,
           aktion: VERWALTUNG_AUDIT.rolleZugewiesen,
-          objekt: `benutzer:${benutzerId} rolle:${rolle} (OIDC-Gruppe)`,
+          objekt: `${ziel}rolle:${rolle} (OIDC-Gruppe)`,
         });
       }
       for (const r of ist) {
         if (r.quelle !== 'oidc' || wunsch.has(r.rolle)) continue;
         await trx.deleteFrom('rolle').where('id', '=', r.id).execute();
         await protokolliere(trx, {
-          benutzerId,
+          benutzerId: akteur,
           aktion: VERWALTUNG_AUDIT.rolleEntzogen,
-          objekt: `benutzer:${benutzerId} rolle:${r.rolle} (OIDC-Gruppe fehlt)`,
+          objekt: `${ziel}rolle:${r.rolle} (OIDC-Gruppe fehlt)`,
         });
       }
     });

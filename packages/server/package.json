@@ -17,7 +17,9 @@
   "scripts": {
     "build": "tsc -b",
     "start": "node dist/main.js",
-    "mandant:anlegen": "node dist/enrollment/cli-mandant-anlegen.js"
+    "mandant:anlegen": "node dist/enrollment/cli-mandant-anlegen.js",
+    "katalog:importieren": "node dist/projektkatalog/cli-katalog-importieren.js",
+    "katalog:stufe": "node dist/projektkatalog/cli-projektwahl-stufe.js"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

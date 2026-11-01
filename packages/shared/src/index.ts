@@ -16,3 +16,6 @@ export * from './abgleich.js';
 export * from './issue-schluessel.js';
 export * from './issues.js';
 export * from './jira.js';
+export * from './projektkatalog.js';
+export * from './projektkatalog-baum.js';
+export * from './projektwahl-hook.js';

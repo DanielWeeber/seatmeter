@@ -206,4 +206,66 @@ describe('Aufbewahrung (Architektur §3.5)', () => {
     expect(zwei.partitionen_geloescht).toEqual([]);
     expect(zwei.posten.filter((p) => p.mandant_id === m).every((p) => p.anzahl === 0)).toBe(true);
   });
+
+  it('Sitzungs-Zuordnung bleibt, bis die letzte Anfrage der Sitzung abgelaufen ist', async () => {
+    const mandant = await legeMandantAn(db);
+    const katalog = await db
+      .insertInto('katalog_projekt')
+      .values({
+        mandant_id: mandant,
+        externe_id: 'P-1',
+        nummer: 'P-1',
+        name: 'Eins',
+        quelle: 'csv',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    // Beide Zuordnungen sind älter als die Frist; nur die laufende Sitzung hat noch Anfragen.
+    await db
+      .insertInto('sitzung_katalog')
+      .values(
+        ['s-laeuft-weiter', 's-vorbei'].map((session_id) => ({
+          mandant_id: mandant,
+          session_id,
+          katalog_projekt_id: katalog.id,
+          erstellt: new Date('2025-01-20T10:00:00Z'),
+        })),
+      )
+      .execute();
+    await db
+      .insertInto('anfrage')
+      .values({
+        mandant_id: mandant,
+        anfrage_key: `req_${randomUUID()}`,
+        ts: new Date('2025-02-20T10:00:00Z'),
+        tag: '2025-02-20',
+        session_id: 's-laeuft-weiter',
+        model: 'claude-sonnet-5-5',
+        input: 1,
+        output: 1,
+        cache_read: 0,
+        cache_write: 0,
+      })
+      .execute();
+    const sitzungen = async () =>
+      (
+        await db
+          .selectFrom('sitzung_katalog')
+          .select('session_id')
+          .where('mandant_id', '=', mandant)
+          .execute()
+      ).map((z) => z.session_id);
+
+    await aufbewahrungJob(ctx, JETZT);
+    expect(await sitzungen()).toEqual(['s-laeuft-weiter']);
+
+    // Läuft auch diese Anfrage ab, geht die Zuordnung mit.
+    await db
+      .updateTable('mandant')
+      .set({ aufbewahrung_anfrage_tage: 30 })
+      .where('id', '=', mandant)
+      .execute();
+    await aufbewahrungJob(ctx, JETZT);
+    expect(await sitzungen()).toEqual([]);
+  });
 });

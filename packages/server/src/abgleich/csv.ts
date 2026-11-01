@@ -92,12 +92,30 @@ export function trennzeichen(text: string): string {
   return ['\t', ';', ','].reduce((best, z) => (zaehle(z) > zaehle(best) ? z : best), ',');
 }
 
-/** CSV nach RFC 4180 (Anführungszeichen, verdoppelte "", Zeilenumbrüche in Feldern). */
-export function parseCsv(text: string, trenn: string): string[][] {
-  const zeilen: string[][] = [];
+/** Eine CSV-Zeile mit der Zeilennummer in der Datei (ab 1), auch bei Leerzeilen und Umbrüchen in Feldern. */
+export interface CsvNummerZeile {
+  felder: string[];
+  nummer: number;
+}
+
+/** Die Datei lässt sich nicht sicher in Zeilen zerlegen; Meldung ohne Zellinhalte. */
+export class CsvFormatFehler extends Error {}
+
+function zerlegen(text: string, trenn: string, streng: boolean): CsvNummerZeile[] {
+  const zeilen: CsvNummerZeile[] = [];
   let feld = '';
   let zeile: string[] = [];
   let inQuote = false;
+  let feldAnfang = true;
+  let nachQuote = false;
+  let aktuell = 1;
+  let start = 1;
+  const abschliessen = () => {
+    zeile.push(feld);
+    feld = '';
+    if (zeile.some((f) => f.trim() !== '')) zeilen.push({ felder: zeile, nummer: start });
+    zeile = [];
+  };
   const t = text.replace(/^\uFEFF/, '');
   for (let i = 0; i < t.length; i++) {
     const c = t[i]!;
@@ -106,23 +124,57 @@ export function parseCsv(text: string, trenn: string): string[][] {
         if (t[i + 1] === '"') {
           feld += '"';
           i += 1;
-        } else inQuote = false;
-      } else feld += c;
-    } else if (c === '"') inQuote = true;
-    else if (c === trenn) {
+        } else {
+          inQuote = false;
+          nachQuote = streng;
+        }
+      } else {
+        if (c === '\n' || (c === '\r' && t[i + 1] !== '\n')) aktuell += 1;
+        feld += c;
+      }
+    } else if (nachQuote && c !== trenn && c !== '\n' && c !== '\r') {
+      throw new CsvFormatFehler(
+        `Zeile ${aktuell}: Nach einem schließenden Anführungszeichen folgt weiterer Text.`,
+      );
+    } else if (c === '"' && (feldAnfang || !streng)) {
+      inQuote = true;
+      feldAnfang = false;
+    } else if (c === trenn) {
       zeile.push(feld);
       feld = '';
+      feldAnfang = true;
+      nachQuote = false;
     } else if (c === '\n' || c === '\r') {
       if (c === '\r' && t[i + 1] === '\n') i += 1;
-      zeile.push(feld);
-      feld = '';
-      if (zeile.some((f) => f.trim() !== '')) zeilen.push(zeile);
-      zeile = [];
-    } else feld += c;
+      abschliessen();
+      aktuell += 1;
+      start = aktuell;
+      feldAnfang = true;
+      nachQuote = false;
+    } else {
+      feld += c;
+      feldAnfang = false;
+    }
   }
-  zeile.push(feld);
-  if (zeile.some((f) => f.trim() !== '')) zeilen.push(zeile);
+  if (streng && inQuote) {
+    throw new CsvFormatFehler('Ein Anführungszeichen in der Datei ist nicht geschlossen.');
+  }
+  abschliessen();
   return zeilen;
+}
+
+/**
+ * Streng, für Dateien, deren Inhalt Projekte deaktivieren kann: Ein Anführungszeichen beginnt nur am Feldanfang einen
+ * Abschnitt, mitten im Feld (`5" Monitor`) ist es ein Zeichen. Text nach dem schließenden Zeichen und ein offenes Ende
+ * werfen `CsvFormatFehler`, weil dann unklar ist, wo die Zeilen enden. Liefert Zeilennummern, auch bei Leerzeilen.
+ */
+export function parseCsvMitNummern(text: string, trenn: string): CsvNummerZeile[] {
+  return zerlegen(text, trenn, true);
+}
+
+/** CSV nach RFC 4180 (Anführungszeichen, verdoppelte "", Zeilenumbrüche in Feldern), nachsichtig bei Fehlern. */
+export function parseCsv(text: string, trenn: string): string[][] {
+  return zerlegen(text, trenn, false).map((z) => z.felder);
 }
 
 /** Erkennt die Zuordnung Feld → Spalte; jede Spalte höchstens einmal. */

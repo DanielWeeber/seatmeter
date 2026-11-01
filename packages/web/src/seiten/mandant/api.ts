@@ -54,6 +54,7 @@ export const ROLLEN_OPTIONEN = [
   ['projektleiter', 'Projektleiter'],
   ['controller', 'Controller/Leser'],
   ['betriebsrat', 'Betriebsrat'],
+  ['entwickler', 'Entwicklung (nur Projektwahl)'],
 ] as const;
 
 /** Herkunft einer Rolle als deutscher Text. */

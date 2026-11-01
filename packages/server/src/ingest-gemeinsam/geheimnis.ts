@@ -15,6 +15,24 @@ export interface MandantSalts {
   projektSalt: Buffer;
 }
 
+/** Liest die Salts nur (innerhalb von `withMandant`); `null`, wenn der Mandant noch keine hat. */
+export async function mandantSaltsLesen(
+  trx: Transaction<Datenbank>,
+  masterKey: Buffer,
+  mandantId: string,
+): Promise<MandantSalts | null> {
+  const zeile = await trx
+    .selectFrom('mandant_geheimnis')
+    .select(['person_salt', 'projekt_salt'])
+    .where('mandant_id', '=', mandantId)
+    .executeTakeFirst();
+  if (!zeile) return null;
+  return {
+    personSalt: entschluessele(masterKey, zeile.person_salt, AAD_PERSON),
+    projektSalt: entschluessele(masterKey, zeile.projekt_salt, AAD_PROJEKT),
+  };
+}
+
 /**
  * Liest die Salts des Mandanten (innerhalb von `withMandant`) und entschlüsselt sie. Fehlt der
  * Datensatz, wird er mit frischen Zufalls-Salts angelegt (idempotent, `ON CONFLICT DO NOTHING`).

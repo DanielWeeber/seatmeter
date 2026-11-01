@@ -9,7 +9,7 @@ import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import type { RolleQuelle } from '../db/schema.js';
 import { sha256, zufallsToken } from '../krypto.js';
-import type { Rolle } from '@seatmeter/shared';
+import { nurEntwickler, type Rolle } from '@seatmeter/shared';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'kysely';
 import {
@@ -130,9 +130,14 @@ export async function rollenSetzen(
     entziehen?: 'alle' | 'quelle' | 'nie';
     akteur: string | null;
     hinweis?: string;
+    /**
+     * Bleibt dem Konto danach nur `entwickler`, steht es nicht im Audit: Das passiert bei der ersten Anmeldung über den
+     * Link der Projektwahl, die Wahl selbst steht bewusst ohne Konto im Audit.
+     */
+    ohneKontoBeiEntwickler?: boolean;
   },
 ): Promise<{ zugewiesen: number; entzogen: number }> {
-  const { benutzerId, soll, quelle, akteur } = angabe;
+  const { benutzerId, soll, quelle } = angabe;
   const entziehen = angabe.entziehen ?? 'alle';
   const zusatz = angabe.hinweis ? ` (${angabe.hinweis})` : '';
   const ist = await trx
@@ -140,6 +145,15 @@ export async function rollenSetzen(
     .select(['id', 'rolle', 'quelle', 'projekt_ids'])
     .where('benutzer_id', '=', benutzerId)
     .execute();
+  const bleiben = ist.filter(
+    (r) =>
+      soll.has(r.rolle) || entziehen === 'nie' || (entziehen === 'quelle' && r.quelle !== quelle),
+  );
+  const ohneKonto =
+    angabe.ohneKontoBeiEntwickler === true &&
+    nurEntwickler([...soll.keys(), ...bleiben.map((r) => r.rolle)]);
+  const akteur = ohneKonto ? null : angabe.akteur;
+  const ziel = ohneKonto ? '' : `benutzer:${benutzerId} `;
   let zugewiesen = 0;
   let entzogen = 0;
   for (const r of ist) {
@@ -150,7 +164,7 @@ export async function rollenSetzen(
     await protokolliere(trx, {
       benutzerId: akteur,
       aktion: VERWALTUNG_AUDIT.rolleEntzogen,
-      objekt: `benutzer:${benutzerId} rolle:${r.rolle}${zusatz}`,
+      objekt: `${ziel}rolle:${r.rolle}${zusatz}`,
     });
   }
   for (const [rolle, projektIds] of soll) {
@@ -182,7 +196,7 @@ export async function rollenSetzen(
     await protokolliere(trx, {
       benutzerId: akteur,
       aktion: VERWALTUNG_AUDIT.rolleZugewiesen,
-      objekt: `benutzer:${benutzerId} rolle:${rolle}${zusatz}`,
+      objekt: `${ziel}rolle:${rolle}${zusatz}`,
     });
   }
   return { zugewiesen, entzogen };

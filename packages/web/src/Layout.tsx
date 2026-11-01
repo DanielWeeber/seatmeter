@@ -4,13 +4,10 @@
 //   Layout: Seitenleiste mit den Gruppen Auswertung (alle) und Einrichtung (Mandanten-Admin, Plattform-Admin).
 //   PlattformLayout: eigener Bereich `/plattform` mit Unternavigation und Link zurück ins Dashboard.
 // Die Sichtbarkeit kommt aus `/me`; der Server prüft jeden Zugriff selbst.
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet, useSearchParams } from 'react-router';
 import { NAV_GRUPPEN, type NavEintrag } from '@seatmeter/shared';
-import { useApi } from './api/client';
-import { authMeSchema } from './api/typen';
-import { AnmeldeBanner, LizenzBanner, useAuth } from './auth/AuthTor';
+import { AnmeldeBanner, LizenzBanner, MandantWahl, useAuth } from './auth/AuthTor';
 import { istMonat, MONATS_SEITEN } from './monat';
 import { gruppeSichtbar, navRechte, rollenText } from './navigation';
 
@@ -18,54 +15,6 @@ const SYSTEM: NavEintrag = { pfad: '/system', titel: 'Systemzustand', gruppe: 'a
 
 const knopf =
   'rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100 disabled:opacity-50';
-
-/** Mandantenwechsel über `POST /api/v1/auth/mandant`; danach laden alle Abfragen neu. */
-function MandantWahl() {
-  const { me } = useAuth();
-  const api = useApi();
-  const queryClient = useQueryClient();
-  const wechseln = useMutation({
-    mutationFn: (mandantId: string) =>
-      api.post('/api/v1/auth/mandant', { mandant_id: mandantId }, authMeSchema),
-    onSuccess: (neu) => {
-      api.merkeCsrf(neu.csrf);
-      void queryClient.invalidateQueries();
-    },
-  });
-  if (!me) return null;
-  if (me.mandanten.length < 2)
-    return me.mandant ? (
-      <span>
-        Mandant <span className="font-medium text-slate-900">{me.mandant.name}</span>
-      </span>
-    ) : (
-      <span>Kein Mandant</span>
-    );
-  return (
-    <label className="flex items-center gap-2">
-      Mandant
-      <select
-        aria-label="Aktiver Mandant"
-        value={me.mandant_id ?? ''}
-        disabled={wechseln.isPending}
-        onChange={(e) => wechseln.mutate(e.target.value)}
-        className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
-      >
-        {!me.mandant_id && <option value="">– wählen –</option>}
-        {me.mandanten.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-      </select>
-      {wechseln.isError && (
-        <span role="alert" className="text-red-700">
-          Wechsel fehlgeschlagen.
-        </span>
-      )}
-    </label>
-  );
-}
 
 function Kopfzeile({ bereich }: { bereich: 'dashboard' | 'plattform' }) {
   const { me, istPlattformAdmin, kannAbmelden, abmelden, abmeldenLaeuft } = useAuth();

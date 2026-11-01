@@ -18,6 +18,9 @@
  *   (oder ein Mandanten-Admin wollte sich selbst deaktivieren).
  * - `domain_vergeben` (409, nur ee): Die E-Mail-Domain gehört schon zu einem Mandanten.
  * - `einladung_ungueltig` (404, nur ee): Einladungslink unbekannt, schon genutzt oder abgelaufen.
+ * - `link_ungueltig` (400), `link_abgelaufen` (410): Link zur Projektwahl falsch bzw. älter als eine Stunde.
+ * - `kein_mitglied` (403): Das Konto hat im Mandanten des Links keine Rolle.
+ * - `bereits_zugeordnet` (409): Repo oder Sitzung hat schon ein Projekt; die erste Wahl gilt.
  */
 export const FEHLER_CODES = [
   'nicht_angemeldet',
@@ -29,6 +32,10 @@ export const FEHLER_CODES = [
   'letzter_admin',
   'domain_vergeben',
   'einladung_ungueltig',
+  'link_ungueltig',
+  'link_abgelaufen',
+  'kein_mitglied',
+  'bereits_zugeordnet',
 ] as const;
 export type FehlerCode = (typeof FEHLER_CODES)[number];
 

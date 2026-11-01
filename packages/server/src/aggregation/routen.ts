@@ -24,6 +24,7 @@ import { withMandant } from '../db/mandant.js';
 import type { Datenbank } from '../db/schema.js';
 import { entschluessele } from '../krypto.js';
 import type { PluginKontext } from '../plugin.js';
+import { katalogNamenLaden } from '../projektkatalog/daten.js';
 import { heuteIn, monatsGrenzen } from './tage.js';
 
 type Trx = Transaction<Datenbank>;
@@ -314,14 +315,17 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
             .execute()
         : [];
       const info = new Map(projekte.map((p) => [p.id, p]));
+      // Zugeordnete Repos zeigen Name und Kunde aus dem Projektkatalog (Modul projektkatalog).
+      const katalog = await katalogNamenLaden(trx, ids);
       const liste: ProjektZeile[] = r.rows.map((z) => {
         const p = z.projekt_id ? info.get(z.projekt_id) : undefined;
+        const k = z.projekt_id ? katalog.get(z.projekt_id) : undefined;
         const anzahl = Number(z.personen);
         const hinweis = personenHinweis(sicht.auswertungsstufe, anzahl);
         return {
           id: z.projekt_id,
-          name: p ? projektName(p) : UNZUGEORDNET_NAME,
-          kunde: p?.kunde ?? null,
+          name: k?.name ?? (p ? projektName(p) : UNZUGEORDNET_NAME),
+          kunde: k ? k.kunde : (p?.kunde ?? null),
           url_norm: p?.url_norm ?? null,
           personen: hinweis ? null : anzahl,
           personen_hinweis: hinweis,
@@ -359,6 +363,7 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
               .executeTakeFirst();
         if (!unzugeordnet && !p) return null;
         const filter = p ? sql`projekt_id = ${p.id}::uuid` : sql`projekt_id IS NULL`;
+        const katalog = p ? (await katalogNamenLaden(trx, [p.id])).get(p.id) : undefined;
         const summe = await sql<SummenZeile & { personen: number }>`
         SELECT count(DISTINCT person_id) AS personen, ${SUMMEN_SQL}
         FROM tag_aggregat WHERE ${imMonat(b)} AND ${filter}`.execute(trx);
@@ -379,8 +384,8 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
           monat: b.monat,
           projekt: {
             id: p?.id ?? null,
-            name: p ? projektName(p) : UNZUGEORDNET_NAME,
-            kunde: p?.kunde ?? null,
+            name: katalog?.name ?? (p ? projektName(p) : UNZUGEORDNET_NAME),
+            kunde: katalog ? katalog.kunde : (p?.kunde ?? null),
             url_norm: p?.url_norm ?? null,
             personen:
               hinweis === 'Auswertungsstufe 0' || hinweis === 'zu wenige Personen' ? null : anzahl,

@@ -172,7 +172,7 @@ function OidcFormular({ d, mandantId }: { d: OidcAntwort; mandantId: string }) {
           />
           <span className="mt-1 block text-xs text-slate-500">
             Eine Zeile je Gruppe: „Gruppe → Rolle, Rolle“. Rollen: mandanten_admin, projektleiter,
-            controller, betriebsrat.
+            controller, betriebsrat, entwickler.
           </span>
         </label>
         <Kontrollkaestchen beschriftung="Aktiv" wert={aktiv} onAendern={setAktiv} />

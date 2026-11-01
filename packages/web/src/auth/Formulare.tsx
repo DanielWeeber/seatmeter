@@ -1,6 +1,8 @@
 // Anmeldung (lokales Konto) und Ersteinrichtung mit dem Einrichtungs-Token aus dem Server-Log.
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { PROJEKTWAHL_PFAD_PRAEFIX } from '@seatmeter/shared';
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import { ApiFehler, useApi } from '../api/client';
 import { authAnbieterSchema } from '../api/typen';
 
@@ -96,9 +98,16 @@ function fehlerBeiEinrichtung(fehler: unknown): string {
 export const knopf =
   'mt-6 w-full rounded bg-slate-900 px-3 py-2 font-medium text-white hover:bg-slate-700 disabled:opacity-50';
 
+/** Nach der SSO-Anmeldung zurück zur Projektwahl (Link des Hooks); sonst wie bisher zur Startseite. */
+export function ssoStart(start: string, pfad: string): string {
+  if (!pfad.startsWith(PROJEKTWAHL_PFAD_PRAEFIX)) return start;
+  return `${start}${start.includes('?') ? '&' : '?'}ziel=${encodeURIComponent(pfad)}`;
+}
+
 /** Knöpfe der Plugin-Anbieter (ee: „Mit weeberwrk SSO anmelden“) aus `GET /api/v1/auth/anbieter`. */
 function SsoKnoepfe() {
   const api = useApi();
+  const { pathname } = useLocation();
   const anbieter = useQuery({
     queryKey: ['auth', 'anbieter'],
     retry: false,
@@ -111,7 +120,7 @@ function SsoKnoepfe() {
       {sso.map((a) => (
         <a
           key={a.name}
-          href={a.start ?? '#'}
+          href={a.start ? ssoStart(a.start, pathname) : '#'}
           className="block w-full rounded border border-slate-900 px-3 py-2 text-center font-medium hover:bg-slate-100"
         >
           {a.titel}
@@ -138,6 +147,7 @@ const TEXT_KEIN_KUERZEL = 'Für dieses Kürzel ist keine SSO-Anmeldung eingerich
  */
 export function Anmeldung({ onErfolg }: { onErfolg: () => void }) {
   const api = useApi();
+  const { pathname } = useLocation();
   const [schritt, setSchritt] = useState<Schritt>('eingabe');
   const [login, setLogin] = useState('');
   const [passwort, setPasswort] = useState('');
@@ -207,7 +217,7 @@ export function Anmeldung({ onErfolg }: { onErfolg: () => void }) {
     return (
       <Rahmen titel="Anmelden">
         <a
-          href={oidc.start_url}
+          href={ssoStart(oidc.start_url, pathname)}
           className="mt-6 block w-full rounded bg-slate-900 px-3 py-2 text-center font-medium text-white hover:bg-slate-700"
         >
           Weiter zu {oidc.bezeichnung}

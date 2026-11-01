@@ -215,6 +215,7 @@ const ROLLEN_TEXT: Record<Rolle, string> = {
   projektleiter: 'Projektleitung',
   controller: 'Controller/Leser',
   betriebsrat: 'Betriebsrat',
+  entwickler: 'Entwicklung (nur Projektwahl)',
 };
 
 const janein = (w: boolean) => (w ? 'ja' : 'nein');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalisiereRepoUrl } from './repo-url.js';
+import { kanonischeRepoInfo, normalisiereRepoUrl, repoInfoAusUrlNorm } from './repo-url.js';
 
 describe('normalisiereRepoUrl (Architektur §3.3)', () => {
   const vektoren: Array<[string, string, string | null, string, string]> = [
@@ -107,5 +107,41 @@ describe('normalisiereRepoUrl (Architektur §3.3)', () => {
     const r = normalisiereRepoUrl('https://ich:geheim@github.com/o/r.git');
     expect(r?.urlNorm).not.toContain('geheim');
     expect(r?.urlNorm).not.toContain('ich');
+  });
+});
+
+describe('kanonischeRepoInfo', () => {
+  it.each([
+    ['git@git.example:o/r.git', 'https://git.example/o/r'],
+    ['git@git.example:kunden/müller/r.git', 'https://git.example/kunden/m%c3%bcller/r'],
+    ['git@git.example:a/../b/r.git', 'https://git.example/b/r'],
+    ['git@git.example:a/{b}/r.git', 'https://git.example/a/%7bb%7d/r'],
+    ['git@git.example:a"b/r.git', 'https://git.example/a%22b/r'],
+    ['git@git.example:a\\b/r.git', 'https://git.example/a/b/r'],
+    ['git@bücher.example:o/r.git', 'https://xn--bcher-kva.example/o/r'],
+  ])('%s ergibt dieselbe Form wie der Ingest und ändert sich nicht mehr', (roh, form) => {
+    const info = kanonischeRepoInfo(roh);
+    expect(info?.urlNorm).toBe(form);
+    expect(normalisiereRepoUrl(form)?.urlNorm).toBe(form);
+    expect(kanonischeRepoInfo(form)?.urlNorm).toBe(form);
+  });
+
+  it('ohne gültige URL bleibt der erste Stand, lokale Pfade bleiben null', () => {
+    expect(kanonischeRepoInfo('git@exa[mple:o/r.git')?.urlNorm).toBe('https://exa[mple/o/r');
+    expect(kanonischeRepoInfo('/srv/git/r.git')).toBeNull();
+  });
+});
+
+describe('repoInfoAusUrlNorm', () => {
+  it('nimmt die URL auseinander, ohne sie zu ändern', () => {
+    expect(repoInfoAusUrlNorm('https://gitlab.example:8443/gruppe/unter/repo')).toEqual({
+      urlNorm: 'https://gitlab.example:8443/gruppe/unter/repo',
+      host: 'gitlab.example',
+      owner: 'gruppe/unter',
+      repoName: 'repo',
+      provider: 'gitlab',
+    });
+    expect(repoInfoAusUrlNorm('https://git.example/repo')?.owner).toBeNull();
+    expect(repoInfoAusUrlNorm('kein-url')).toBeNull();
   });
 });

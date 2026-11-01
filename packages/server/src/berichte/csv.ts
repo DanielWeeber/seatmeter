@@ -34,6 +34,9 @@ export const cent = (c: number | null | undefined) =>
 /** Mikro-USD → auf Cent gerundet `1234,56`. */
 export const mikro = (m: number) => cent(Math.round(m / 10_000));
 
+/** Mikro-USD → sechs Nachkommastellen: Die Summe der Zeilen ergibt genau die Summe im Dashboard. */
+export const mikroGenau = (m: number) => dezimal(m / 1_000_000, 6);
+
 export function csv(zeilen: readonly (readonly (CsvWert | { text: string })[])[]): string {
   return `\uFEFF${zeilen.map((z) => z.map(feld).join(';')).join('\r\n')}\r\n`;
 }

@@ -17,6 +17,10 @@ import * as m0022 from './2026_10_24_0022_budgets_hinweise.js';
 import * as m0023 from './2026_10_24_0023_sso_je_mandant.js';
 import * as m0024 from './2026_10_24_0024_scim.js';
 import * as m0025 from './2026_10_24_0025_jira.js';
+import * as m0026 from './2026_11_01_0026_projektkatalog.js';
+import * as m0027 from './2026_11_01_0027_katalog_import_token.js';
+import * as m0028 from './2026_11_01_0028_projektwahl_stufe.js';
+import * as m0029 from './2026_11_01_0029_katalog_push.js';
 
 export const MIGRATIONEN: Record<string, Migration> = {
   '2026_10_22_0001_grundschema': m0001,
@@ -36,4 +40,8 @@ export const MIGRATIONEN: Record<string, Migration> = {
   '2026_10_24_0023_sso_je_mandant': m0023,
   '2026_10_24_0024_scim': m0024,
   '2026_10_24_0025_jira': m0025,
+  '2026_11_01_0026_projektkatalog': m0026,
+  '2026_11_01_0027_katalog_import_token': m0027,
+  '2026_11_01_0028_projektwahl_stufe': m0028,
+  '2026_11_01_0029_katalog_push': m0029,
 };

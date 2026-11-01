@@ -218,6 +218,8 @@ function Optionen({
   setAgentPfad,
   orgFestlegen,
   setOrgFestlegen,
+  projektwahl,
+  setProjektwahl,
 }: {
   k: AusrollenKonfiguration;
   kopfzeilen: KopfzeilenArt;
@@ -228,6 +230,8 @@ function Optionen({
   setAgentPfad: (p: string) => void;
   orgFestlegen: boolean;
   setOrgFestlegen: (b: boolean) => void;
+  projektwahl: boolean;
+  setProjektwahl: (b: boolean) => void;
 }) {
   const name = useId();
   const ohneOrgs = k.orgs.length === 0;
@@ -286,6 +290,24 @@ function Optionen({
             {ohneOrgs
               ? 'Im Mandanten ist keine Organisation hinterlegt.'
               : `Alle ${k.orgs.length} Organisation(en) des Mandanten; wirkt nur in den Managed Settings (MDM).`}
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={projektwahl}
+          onChange={(e) => setProjektwahl(e.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          Hook für die erzwungene Projektwahl aufnehmen
+          <span className="block text-xs text-slate-500">
+            Nur in den verwalteten Einstellungen (Tabs MDM und Server). Der Hook blockiert den
+            Prompt in Repos ohne Projekt, sobald unter Einrichtung → Projektkatalog das Erzwingen
+            eingeschaltet und der Katalog gefüllt ist. Er sendet nur Sitzungs-ID und Repo-URL, nie
+            den Prompt. Beim ersten Start bestätigt jede Person den Hook einmal; wer ablehnt,
+            beendet Claude Code.
           </span>
         </span>
       </label>
@@ -643,6 +665,7 @@ function Inhalt({ k }: { k: AusrollenKonfiguration }) {
   const [token, setToken] = useState<MandantenTokenAntwort | null>(null);
   const [agentPfadEingabe, setAgentPfad] = useState(AGENT_STANDARD_PFAD);
   const [orgFestlegen, setOrgFestlegen] = useState(k.orgs.length > 0);
+  const [projektwahl, setProjektwahl] = useState(false);
   const [aktiv, setAktiv] = useState<ReiterId>('mdm');
   const [pfadeText, setPfadeText] = useState(STANDARD_PFADE);
   const [einmalcode, setEinmalcode] = useState<Einmalcode | null>(null);
@@ -653,6 +676,7 @@ function Inhalt({ k }: { k: AusrollenKonfiguration }) {
     token: kopfzeilen === 'fest' ? (token?.token ?? null) : null,
     agentPfad,
     orgFestlegen,
+    projektwahl,
   };
 
   return (
@@ -671,6 +695,8 @@ function Inhalt({ k }: { k: AusrollenKonfiguration }) {
           setAgentPfad={setAgentPfad}
           orgFestlegen={orgFestlegen}
           setOrgFestlegen={setOrgFestlegen}
+          projektwahl={projektwahl}
+          setProjektwahl={setProjektwahl}
         />
       </Abschnitt>
       <Abschnitt titel="Varianten">

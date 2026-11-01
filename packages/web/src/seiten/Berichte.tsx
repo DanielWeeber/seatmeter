@@ -15,6 +15,7 @@ const ROLLEN_TEXT: Record<Rolle, string> = {
   projektleiter: 'Projektleitung',
   controller: 'Controller/Leser',
   betriebsrat: 'Betriebsrat',
+  entwickler: 'Entwicklung',
 };
 
 /** Lesbare Namen für Audit-Aktionen der Berichte (Server: AUDIT_AKTION im Modul audit). */
@@ -182,7 +183,8 @@ export function Berichte() {
   const { me } = useAuth();
   // Ohne Auth-Modul (me = null) entscheidet der Server; sonst nach Rolle (server berichte).
   const rollen = me?.rollen ?? null;
-  const darfAbrechnung = rollen === null || rollen.some((r) => r !== 'betriebsrat');
+  const darfAbrechnung =
+    rollen === null || rollen.some((r) => r !== 'betriebsrat' && r !== 'entwickler');
   const darfBetriebsrat =
     rollen === null || rollen.includes('mandanten_admin') || rollen.includes('betriebsrat');
   const bericht = useBetriebsratBericht(monat, darfBetriebsrat);

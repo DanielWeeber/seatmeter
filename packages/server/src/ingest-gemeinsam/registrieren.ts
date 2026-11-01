@@ -4,6 +4,7 @@ import { enrollmentRouten } from '../enrollment/routes.js';
 import { agentIngestRouten } from '../ingest-agent/routes.js';
 import { otlpRouten } from '../ingest-otlp/routes.js';
 import type { PluginKontext, SeatmeterPlugin } from '../plugin.js';
+import { projektwahlPruefRoute } from '../projektkatalog/projektwahl.js';
 import { IngestRatenlimit, ratenlimitOptionen } from './ratenlimit.js';
 
 export async function ingestModuleRegistrieren(
@@ -16,6 +17,13 @@ export async function ingestModuleRegistrieren(
   const ratenlimit = new IngestRatenlimit(ratenlimitOptionen(ctx.konfiguration));
   await otlpRouten(app, { db: ctx.db, masterKey, ratenlimit });
   await agentIngestRouten(app, { db: ctx.db, masterKey, ratenlimit });
+  await projektwahlPruefRoute(app, {
+    db: ctx.db,
+    masterKey,
+    ratenlimit,
+    konfiguration: ctx.konfiguration,
+    env,
+  });
   await enrollmentRouten(app, {
     ctx,
     ingestUrl: env.SEATMETER_INGEST_URL || undefined,

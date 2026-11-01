@@ -2,7 +2,13 @@
 // Header-Modus hinter einem vertrauenswürdigen Proxy, danach weitere Auth-Provider (Modul oidc, Plugins).
 // Exportiert die preHandler `requireAnmeldung`, `requireBenutzer` und `requireRolle` für alle Module.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { fehlerKoerper, rolleSchema, type AuthMe, type Rolle } from '@seatmeter/shared';
+import {
+  fehlerKoerper,
+  nurEntwickler,
+  rolleSchema,
+  type AuthMe,
+  type Rolle,
+} from '@seatmeter/shared';
 import { sql, type Transaction } from 'kysely';
 import { protokolliere, AUDIT_AKTION } from '../audit/protokoll.js';
 import type { Db } from '../db/db.js';
@@ -83,7 +89,10 @@ function rollenIn(alle: MandantRolle[], mandantId: string | null) {
   const eigene = alle.filter((r) => r.mandant_id === mandantId);
   const rollen = [...new Set(eigene.map((r) => r.rolle))];
   // Projektleiter ohne weitere Rolle sehen nur ihre Projekte; jede andere Rolle sieht alle.
-  const nurProjektleiter = rollen.length > 0 && rollen.every((r) => r === 'projektleiter');
+  // `entwickler` zählt nicht: Die Rolle gibt keine Sicht auf Auswertungen, also auch keine Erweiterung.
+  const sichtRollen = rollen.filter((r) => r !== 'entwickler');
+  const nurProjektleiter =
+    sichtRollen.length > 0 && sichtRollen.every((r) => r === 'projektleiter');
   const projektIds = nurProjektleiter
     ? [...new Set(eigene.flatMap((r) => r.projekt_ids ?? []))]
     : null;
@@ -105,6 +114,8 @@ function cookieOptionen(zustand: AuthZustand, httpOnly: boolean) {
 function sitzungsMandant(alle: MandantRolle[], wunsch?: string | null): string | null {
   return (
     (wunsch && alle.some((r) => r.mandant_id === wunsch) ? wunsch : null) ??
+    // Lieber ein Mandant mit Dashboard: Nur `entwickler` führte sonst auf die Hinweisseite, obwohl anderswo mehr geht.
+    alle.find((r) => r.rolle !== 'entwickler')?.mandant_id ??
     alle[0]?.mandant_id ??
     null
   );
@@ -147,7 +158,11 @@ async function anmeldungProtokollieren(
   benutzerId: string,
   mandantId: string | null,
   quelle: SitzungQuelle,
+  rollen: readonly Rolle[],
 ): Promise<void> {
+  // Konten nur mit `entwickler`: weder Eintrag noch Anmeldezeit. Die Wahl steht bewusst ohne Konto im Audit und ließe
+  // sich sonst über die Anmeldung davor einer Person zuordnen. Das Anmeldeprotokoll führt der Identitätsanbieter.
+  if (nurEntwickler([...rollen])) return;
   await db
     .updateTable('benutzer')
     .set({ zuletzt_angemeldet: new Date() })
@@ -179,7 +194,13 @@ export async function erstelleSitzung(
   );
   reply.setCookie(SITZUNG_COOKIE, s.token, cookieOptionen(zustand, true));
   reply.setCookie(CSRF_COOKIE, s.csrf, cookieOptionen(zustand, false));
-  await anmeldungProtokollieren(db, benutzer.id, mandantId, quelle);
+  await anmeldungProtokollieren(
+    db,
+    benutzer.id,
+    mandantId,
+    quelle,
+    rollenIn(alle, mandantId).rollen,
+  );
   return {
     benutzerId: benutzer.id,
     benutzername: benutzer.benutzername,
@@ -236,7 +257,13 @@ async function headerSitzung(
   });
   if (ergebnis.neu) {
     reply.setCookie(SITZUNG_COOKIE, ergebnis.token, cookieOptionen(zustand, true));
-    await anmeldungProtokollieren(db, benutzer.id, ergebnis.mandantId, 'remote_user');
+    await anmeldungProtokollieren(
+      db,
+      benutzer.id,
+      ergebnis.mandantId,
+      'remote_user',
+      rollenIn(alle, ergebnis.mandantId).rollen,
+    );
   }
   reply.setCookie(CSRF_COOKIE, ergebnis.csrf, cookieOptionen(zustand, false));
   return {
@@ -354,7 +381,8 @@ async function ausHeader(
     if (neu) {
       await withMandant(db, mandantId, (trx) =>
         protokolliere(trx, {
-          benutzerId: neu.id,
+          // Kein Konto bei `entwickler`: Das Anlegen passiert beim ersten Folgen des Links, direkt vor der Wahl.
+          benutzerId: konfiguration.SEATMETER_AUTO_ROLLE === 'entwickler' ? null : neu.id,
           aktion: AUDIT_AKTION.benutzerAngelegt,
           objekt: `Proxy-Header, Rolle ${konfiguration.SEATMETER_AUTO_ROLLE}`,
         }),
@@ -435,7 +463,10 @@ export async function requireAnmeldung(
   return undefined;
 }
 
-/** preHandler: angemeldet mit aktivem Mandanten. */
+/**
+ * preHandler: angemeldet mit aktivem Mandanten. Die Rolle `entwickler` allein reicht nicht: Sie darf nur die
+ * Projektwahl (eigene Routen mit `requireAnmeldung`), sonst sähe sie alle Auswertungen.
+ */
 export async function requireBenutzer(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -444,6 +475,9 @@ export async function requireBenutzer(
   if (reply.sent) return reply;
   if (!request.benutzer?.mandantId) {
     return reply.code(403).send(fehlerKoerper('kein_mandant', 'kein Mandant gewählt'));
+  }
+  if (nurEntwickler(request.benutzer.rollen)) {
+    return reply.code(403).send(fehlerKoerper('rolle_fehlt', 'Rolle fehlt'));
   }
   return undefined;
 }

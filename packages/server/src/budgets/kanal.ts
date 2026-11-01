@@ -49,6 +49,8 @@ export interface ZustellOptionen {
 export interface AlarmNachricht {
   /** Stabiler Schlüssel je Budget, Monat und Schwelle (Relay `/alert`: ein Vorfall je Schlüssel). */
   schluessel: string;
+  /** Ereignisname am Webhook; Standard `seatmeter.budget_alarm`. */
+  ereignis?: string;
   titel: string;
   zeilen: string[];
   link: string | null;
@@ -114,7 +116,7 @@ export async function zustellen(
         f,
         k.url,
         {
-          ereignis: n.test ? 'seatmeter.test' : 'seatmeter.budget_alarm',
+          ereignis: n.test ? 'seatmeter.test' : (n.ereignis ?? 'seatmeter.budget_alarm'),
           titel: n.titel,
           text: n.zeilen.join('\n'),
           link: n.link,

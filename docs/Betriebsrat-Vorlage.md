@@ -41,13 +41,14 @@ Warum überhaupt Personenbezug? Sitzkosten fallen je Person an. Um sie auf Proje
 | Modell und Merkmale    | Modellname, Geschwindigkeitsmodus, Rechenregion, Subagent ja/nein, von Claude Code gemeldete Kosten                                          | Preisberechnung, Kontrolle                |
 | Zeitpunkt je Anfrage   | gespeichert (90 Tage) für Tageszuordnung, Abgleich der Quellen und Monatsgrenzen; **nie als Stunden- oder Uhrzeitsicht je Person angezeigt** | Zuordnung zu Tag und Monat                |
 | Projekt                | normalisierte Repo-URL (ohne Zugangsdaten), Owner, Repo-Name; Option „nur Hash“ mit eigenem Anzeigenamen                                     | Zuordnung zum Projekt                     |
+| Projektzuordnung       | optional: Repo → Projekt aus dem Projektkatalog, in Ordnern ohne Repo Sitzungs-ID → Projekt; nicht, wer gewählt hat                          | Kosten je Projekt                       |
 | Person                 | nur als Pseudonym (Abschnitt 5), Anzeige als Kurzcode `P-XXXXXX`; Sitztyp (z. B. Standard, Premium)                                          | Sitzkosten-Verteilung                     |
 | Technische Kennungen   | Sitzungs- und Anfrage-ID von Claude Code                                                                                                     | doppelte Zählung vermeiden                |
 | Rechner                | vom Admin vergebene Bezeichnung, Betriebssystem, Agent-Version, Zeitpunkt der letzten Meldung                                                | Betrieb des Agenten, Widerruf             |
 | Claude-Code-Version    | Versionsnummer                                                                                                                               | Fehlersuche                               |
 | Auth-Klasse            | Abo, API, Anbieter, fremde Organisation                                                                                                      | Filter „nur Abo“                          |
 | Organisations-ID       | ID der Anthropic-Organisation von `<Firma>` (Positivliste)                                                                                   | Filter „nur Abo“                          |
-| Dashboard-Konten       | Anmeldename, Rollen, Zugriffs- und Änderungsprotokoll                                                                                        | Zugriffskontrolle, Nachweis               |
+| Dashboard-Konten       | Anmeldename, Rollen, Zugriffs- und Änderungsprotokoll; für Konten nur mit der Rolle `entwickler` (Projektwahl) weder Anmelde-Eintrag noch letzte Anmeldung; Anlegen und Rollenvergabe bei der ersten SSO-Anmeldung ohne Konto im Protokoll                                                                                        | Zugriffskontrolle, Nachweis               |
 
 ### 4.2 Ausdrücklich nicht erfasst
 

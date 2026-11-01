@@ -3,10 +3,24 @@
 import { z } from 'zod';
 import { preisZeileSchema } from './preise/typen.js';
 
-/** Rollen laut Architektur §6 (Tabelle `rolle`). Plattform-Admin gehört zu ee. */
-export const ROLLEN = ['mandanten_admin', 'projektleiter', 'controller', 'betriebsrat'] as const;
+/**
+ * Rollen laut Architektur §6 (Tabelle `rolle`). Plattform-Admin gehört zu ee. `entwickler` darf nur die
+ * Projektwahl (Modul projektkatalog) und sieht keine Auswertung.
+ */
+export const ROLLEN = [
+  'mandanten_admin',
+  'projektleiter',
+  'controller',
+  'betriebsrat',
+  'entwickler',
+] as const;
 export const rolleSchema = z.enum(ROLLEN);
 export type Rolle = z.infer<typeof rolleSchema>;
+
+/** Hat das Konto im Mandanten ausschließlich die Rolle `entwickler` (keine Auswertungen)? */
+export function nurEntwickler(rollen: readonly Rolle[]): boolean {
+  return rollen.length > 0 && rollen.every((r) => r === 'entwickler');
+}
 
 /**
  * Sitztypen (Tabellen `person_sitz`, `sitzkosten`). `max5` = Claude Max 5x, `max20` = Claude Max 20x

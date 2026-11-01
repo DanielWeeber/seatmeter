@@ -15,7 +15,7 @@ Eingerichtet wird alles im Dashboard unter **Einrichtung → SSO und Konten** (n
 3. In seatmeter Issuer-URL, Client-ID, Client-Secret, Bezeichnung (Knopftext „Weiter zu <Bezeichnung>“) und Scopes (Standard `openid profile email groups`) speichern. Das Secret wird verschlüsselt gespeichert und nie wieder angezeigt; leer lassen = behalten.
 4. „Verbindung prüfen“ ruft die Discovery (`<issuer>/.well-known/openid-configuration`) ab und zeigt die Endpunkte.
 5. „Testanmeldung“ startet eine echte Anmeldung über den Anmeldedienst und kehrt auf die Seite zurück.
-6. Optional **Gruppen → Rollen**: `{ "<gruppe>": "<rolle>" | ["<rolle>", …] }` mit den Rollen `mandanten_admin`, `projektleiter`, `controller`, `betriebsrat`. Rollen aus Gruppen tragen die Herkunft `oidc` und werden beim nächsten Login ohne die Gruppe wieder entzogen; manuell vergebene Rollen bleiben. Ohne Zuordnung vergibt der Login keine Rollen (Rollen dann über „Konten“).
+6. Optional **Gruppen → Rollen**: `{ "<gruppe>": "<rolle>" | ["<rolle>", …] }` mit den Rollen `mandanten_admin`, `projektleiter`, `controller`, `betriebsrat`, `entwickler` (nur Projektwahl, keine Auswertung; `docs/Projektkatalog.md`). Rollen aus Gruppen tragen die Herkunft `oidc` und werden beim nächsten Login ohne die Gruppe wieder entzogen; manuell vergebene Rollen bleiben. Ohne Zuordnung vergibt der Login keine Rollen (Rollen dann über „Konten“).
 7. E-Mail-Domain hinzufügen und verifizieren (siehe unten), damit die Anmeldeseite die Domain erkennt.
 
 ### Konten bei der Anmeldung

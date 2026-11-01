@@ -2,7 +2,14 @@
 // Person (§3.2), Projekt (§3.3), Sitzung, Anfrage (§3.4 Schlüssel-Upsert mit Quellen-Bits) und
 // `ingest_statistik`. Die A/B-Heuristik für `msg:`-Schlüssel gehört zum Modul `merge` (Phase 2).
 import { sql, type Transaction } from 'kysely';
-import { QUELLE_A, QUELLE_B, normalisiereRepoUrl, type AuthKlasse } from '@seatmeter/shared';
+import {
+  QUELLE_A,
+  QUELLE_B,
+  normalisiereRepoUrl,
+  repoInfoAusUrlNorm,
+  type AuthKlasse,
+  type RepoInfo,
+} from '@seatmeter/shared';
 import { personKeyEmail, personKeyKonto, projektKey, pseudonym } from '@seatmeter/shared/hmac';
 import type { Datenbank } from '../db/schema.js';
 import type { MandantKontext } from './kontext.js';
@@ -158,6 +165,30 @@ export interface ProjektRoh {
 
 const PROVIDER = new Set(['github', 'gitlab', 'gitea', 'unknown']);
 
+/** Nur lesen: Projekt-ID zur normalisierten URL (Alias zuerst), legt nichts an; `null` = unbekannt. */
+export async function projektFinden(
+  trx: Trx,
+  mandantId: string,
+  projektSalt: Buffer,
+  urlNorm: string,
+): Promise<string | null> {
+  const key = projektKey(projektSalt, urlNorm);
+  const alias = await trx
+    .selectFrom('projekt_alias')
+    .select('projekt_id')
+    .where('mandant_id', '=', mandantId)
+    .where('projekt_key', '=', key)
+    .executeTakeFirst();
+  if (alias) return alias.projekt_id;
+  const p = await trx
+    .selectFrom('projekt')
+    .select('id')
+    .where('mandant_id', '=', mandantId)
+    .where('projekt_key', '=', key)
+    .executeTakeFirst();
+  return p?.id ?? null;
+}
+
 /** Projekt-ID zur Repo-URL (Alias zuerst, sonst Upsert über `projekt_key`); `null` = unzugeordnet. */
 export async function projektAufloesen(
   trx: Trx,
@@ -185,32 +216,62 @@ export async function projektAufloesen(
       providerRoh && PROVIDER.has(providerRoh)
         ? (providerRoh as 'github' | 'gitlab' | 'gitea' | 'unknown')
         : info.provider;
-    const neu = await trx
-      .insertInto('projekt')
-      .values({
-        mandant_id: ctx.mandantId,
-        projekt_key: key,
-        url_norm: info.urlNorm,
-        repo_name: roh.repoName?.toLowerCase() || info.repoName,
-        owner: roh.owner?.toLowerCase() || info.owner,
-        provider,
-      })
-      .onConflict((oc) => oc.columns(['mandant_id', 'projekt_key']).doNothing())
-      .returning('id')
-      .executeTakeFirst();
-    id =
-      neu?.id ??
-      (
-        await trx
-          .selectFrom('projekt')
-          .select('id')
-          .where('mandant_id', '=', ctx.mandantId)
-          .where('projekt_key', '=', key)
-          .executeTakeFirstOrThrow()
-      ).id;
+    id = await projektEinfuegen(trx, ctx.mandantId, key, {
+      ...info,
+      repoName: roh.repoName?.toLowerCase() || info.repoName,
+      owner: roh.owner?.toLowerCase() || info.owner,
+      provider,
+    });
   }
   cache.set(info.urlNorm, id);
   return id;
+}
+
+/** Legt das Projekt unter genau diesem Schlüssel an, auch bei gleichzeitigem Anlegen; liefert seine ID. */
+async function projektEinfuegen(
+  trx: Trx,
+  mandantId: string,
+  key: Buffer,
+  info: RepoInfo,
+): Promise<string> {
+  const neu = await trx
+    .insertInto('projekt')
+    .values({
+      mandant_id: mandantId,
+      projekt_key: key,
+      url_norm: info.urlNorm,
+      repo_name: info.repoName,
+      owner: info.owner,
+      provider: info.provider,
+    })
+    .onConflict((oc) => oc.columns(['mandant_id', 'projekt_key']).doNothing())
+    .returning('id')
+    .executeTakeFirst();
+  if (neu) return neu.id;
+  const vorhanden = await trx
+    .selectFrom('projekt')
+    .select('id')
+    .where('mandant_id', '=', mandantId)
+    .where('projekt_key', '=', key)
+    .executeTakeFirstOrThrow();
+  return vorhanden.id;
+}
+
+/**
+ * Projekt-ID zu einer schon normalisierten URL (Alias zuerst), ohne sie noch einmal zu normalisieren: Die Projektwahl
+ * sucht und legt unter genau dem Schlüssel an, den die Prüf-Route gelesen hat. `null`, wenn die URL keine solche Form hat.
+ */
+export async function projektZuUrlNorm(
+  trx: Trx,
+  ctx: MandantKontext,
+  urlNorm: string,
+): Promise<string | null> {
+  const info = repoInfoAusUrlNorm(urlNorm);
+  if (!info) return null;
+  return (
+    (await projektFinden(trx, ctx.mandantId, ctx.projektSalt, urlNorm)) ??
+    projektEinfuegen(trx, ctx.mandantId, projektKey(ctx.projektSalt, urlNorm), info)
+  );
 }
 
 /**

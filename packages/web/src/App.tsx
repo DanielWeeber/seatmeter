@@ -1,7 +1,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router';
-import { istPlattformPfad, PLATTFORM_PFAD } from '@seatmeter/shared';
+import { istPlattformPfad, PLATTFORM_PFAD, PROJEKTWAHL_PFAD_PRAEFIX } from '@seatmeter/shared';
 import { ApiProvider, type FetchFunktion } from './api/client';
 import { AuthTor } from './auth/AuthTor';
 import { Layout, PlattformLayout } from './Layout';
@@ -22,6 +22,9 @@ import { Platzhalter } from './seiten/Platzhalter';
 import { Preise } from './seiten/Preise';
 import { ProjektDetail } from './seiten/ProjektDetail';
 import { Projekte } from './seiten/Projekte';
+import { Projektkatalog } from './seiten/projektkatalog/Projektkatalog';
+import { ProjektKosten } from './seiten/projektkatalog/ProjektKosten';
+import { Projektwahl } from './seiten/projektkatalog/Projektwahl';
 import { Projektpreise } from './seiten/Projektpreise';
 import { Rechner } from './seiten/Rechner';
 import { SsoUndKonten } from './seiten/sso/SsoUndKonten';
@@ -45,6 +48,8 @@ const SEITEN: Record<string, ReactElement> = {
   '/abgleich': <Abgleich />,
   '/einrichtung/jira': <Jira />,
   '/jira-kosten': <JiraKosten />,
+  '/einrichtung/projektkatalog': <Projektkatalog />,
+  '/projektkosten': <ProjektKosten />,
   '/mandant': <Mandant />,
   '/einrichtung/sso': <SsoUndKonten />,
 };
@@ -89,6 +94,7 @@ export function App({
         <PluginProvider plugins={plugins}>
           <AuthTor>
             <Routes>
+              <Route path={`${PROJEKTWAHL_PFAD_PRAEFIX}:token`} element={<Projektwahl />} />
               <Route element={<PlattformLayout eintraege={plattform} />}>
                 <Route
                   path={PLATTFORM_PFAD}

@@ -538,6 +538,112 @@ export interface ProjektJiraTabelle {
   geaendert: ColumnType<Date, Date | string | undefined, Date | string>;
 }
 
+/** Einstellungen des Projektkatalogs je Mandant (Migration 0026). */
+export interface MandantProjektkatalogTabelle {
+  mandant_id: string;
+  stufe: Generated<'aus' | 'warnen' | 'blockieren'>;
+  kontakt: string | null;
+  zuletzt_import: Zeit | null;
+  import_quelle: string | null;
+  inaktiv_status: ColumnType<string[] | null, string[] | null | undefined, string[] | null>;
+  zuletzt_sync: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  zuletzt_push: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  sync_warnung_stunden: ColumnType<number | null, number | null | undefined, number | null>;
+  sync_deaktivieren_tage: ColumnType<number | null, number | null | undefined, number | null>;
+  sync_deaktivieren_max_prozent: Generated<number>;
+  sync_alarm_seit: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  sync_bremse_seit: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  geaendert: ZeitDefault;
+}
+
+/** Projekt aus der Quelle des Mandanten (Migration 0026); wird inaktiv, nie gelöscht. */
+export interface KatalogProjektTabelle {
+  id: Id;
+  mandant_id: string;
+  /** Schlüssel je Mandant (Migration 0029). */
+  externe_id: string;
+  /** Nur Anzeige; ohne Wert zeigt das Dashboard die externe ID. */
+  nummer: string | null;
+  name: string;
+  kunde: string | null;
+  /** Roh, ohne Fremdschlüssel: Das Elternprojekt darf später ankommen. */
+  parent_externe_id: string | null;
+  status_roh: string | null;
+  aktiv: Generated<boolean>;
+  quelle: string;
+  zuletzt_gesehen: ZeitDefault;
+  erstellt: ZeitDefault;
+}
+
+/** Token für geplante Katalog-Importe (Migration 0027); gespeichert nur als SHA-256. */
+export interface KatalogImportTokenTabelle {
+  id: Id;
+  mandant_id: string;
+  token_sha256: Buffer;
+  praefix: string;
+  bezeichnung: string;
+  scope: ColumnType<
+    'csv_import' | 'katalog_api' | 'sync_status',
+    'csv_import' | 'katalog_api' | 'sync_status' | undefined,
+    never
+  >;
+  erstellt: ZeitDefault;
+  zuletzt_genutzt: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  widerrufen: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+}
+
+/** Tageszähler der Katalog-API je Token, UTC-Tag (Migration 0029). */
+export interface KatalogSyncTagTabelle {
+  mandant_id: string;
+  tag: Tag;
+  token_id: string;
+  neu: Zahl;
+  aktualisiert: Zahl;
+  unveraendert: Zahl;
+  abgelehnt: Zahl;
+  protokolliert: Generated<boolean>;
+}
+
+/** Zuordnung Repo → Katalog-Projekt (Migration 0026). */
+export interface ProjektKatalogTabelle {
+  mandant_id: string;
+  projekt_id: string;
+  katalog_projekt_id: string;
+  geaendert: ZeitDefault;
+}
+
+/** Zuordnung Sitzung ohne Repo → Katalog-Projekt (Migration 0026). */
+export interface SitzungKatalogTabelle {
+  mandant_id: string;
+  session_id: string;
+  katalog_projekt_id: string;
+  erstellt: ZeitDefault;
+}
+
+/** Kosten je Katalog-Projekt und Repo beim Monatsabschluss (Migration 0026); `projekt_id` NULL = ohne Repo. */
+export interface KatalogAbschlussTabelle {
+  id: Id;
+  mandant_id: string;
+  monat: Tag;
+  /** Schlüssel des Projekts; leer = offen (Migration 0029). */
+  externe_id: Generated<string>;
+  nummer: string;
+  name: string;
+  pfad: string | null;
+  kunde: string | null;
+  projekt_id: string | null;
+  projekt_name: string | null;
+  sitzungen: Zahl;
+  input: Zahl;
+  output: Zahl;
+  cache_read: Zahl;
+  cache_write: Zahl;
+  cache_write_1h: Zahl;
+  web_search: Zahl;
+  anfragen: Zahl;
+  schatten_usd_micros: Zahl;
+}
+
 /** Titel und Status je Jira-Issue, 24 h gültig (Migration 0025). */
 export interface JiraIssueCacheTabelle {
   mandant_id: string;
@@ -572,7 +678,7 @@ export interface RolleTabelle {
   id: Id;
   mandant_id: string;
   benutzer_id: string;
-  rolle: 'mandanten_admin' | 'projektleiter' | 'controller' | 'betriebsrat';
+  rolle: 'mandanten_admin' | 'projektleiter' | 'controller' | 'betriebsrat' | 'entwickler';
   projekt_ids: string[] | null;
   /**
    * Herkunft (Migration 0013, `scim` ab 0021): `manuell`, `oidc` (Gruppen-Zuordnung, beim Login abgeglichen)
@@ -676,6 +782,13 @@ export interface Datenbank {
   mandant_jira: MandantJiraTabelle;
   projekt_jira: ProjektJiraTabelle;
   jira_issue_cache: JiraIssueCacheTabelle;
+  mandant_projektkatalog: MandantProjektkatalogTabelle;
+  katalog_projekt: KatalogProjektTabelle;
+  katalog_import_token: KatalogImportTokenTabelle;
+  katalog_sync_tag: KatalogSyncTagTabelle;
+  projekt_katalog: ProjektKatalogTabelle;
+  sitzung_katalog: SitzungKatalogTabelle;
+  katalog_abschluss: KatalogAbschlussTabelle;
   mandant_oidc: MandantOidcTabelle;
   mandant_domain: MandantDomainTabelle;
   konto_einladung: KontoEinladungTabelle;

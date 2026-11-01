@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { erstelleApp } from '../src/app.js';
 import { ladeKonfiguration } from '../src/config.js';
 import { erstelleDb, type Db } from '../src/db/db.js';
+import { linkTokenErzeugen } from '../src/projektkatalog/link.js';
 import { loesePfad } from '../src/static/index.js';
 
 describe('Dashboard-Auslieferung (SEATMETER_WEB_DIST)', () => {
@@ -48,6 +50,16 @@ describe('Dashboard-Auslieferung (SEATMETER_WEB_DIST)', () => {
       expect(r.headers['content-security-policy']).toContain("script-src 'self'");
       expect(r.body).toContain('<title>seatmeter</title>');
     }
+  });
+
+  it('liefert index.html für den Link der Projektwahl (Token ohne Dateiendung)', async () => {
+    const token = linkTokenErzeugen(Buffer.alloc(32, 1), {
+      mandantId: randomUUID(),
+      projektId: randomUUID(),
+    });
+    const r = await app.inject({ method: 'GET', url: `/projektwahl/${token}` });
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toContain('<title>seatmeter</title>');
   });
 
   it('liefert Assets mit langem Cache und Dateien aus der Wurzel', async () => {

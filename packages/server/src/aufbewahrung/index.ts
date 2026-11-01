@@ -155,6 +155,29 @@ export async function aufbewahrungJob(
         .where('monat', '<', grenzeAbschluss)
         .executeTakeFirst();
       neu('issue_aggregat', grenzeAbschluss, issues.numDeletedRows);
+      // Stand der Katalog-Kosten: Frist wie der Monatsabschluss. Sitzungs-Zuordnung wie die Einzelanfragen.
+      const katalog = await trx
+        .deleteFrom('katalog_abschluss')
+        .where('monat', '<', grenzeAbschluss)
+        .executeTakeFirst();
+      neu('katalog_abschluss', grenzeAbschluss, katalog.numDeletedRows);
+      // Erst weg, wenn auch die letzte Anfrage der Sitzung abgelaufen ist: Eine Sitzung kann über die Monatsgrenze laufen,
+      // sonst fiele ihre Nutzung im späteren Monat aus der Zurechnung. Abgelaufene Anfragen sind hier schon gelöscht.
+      const sitzungKatalog = await trx
+        .deleteFrom('sitzung_katalog')
+        .where('erstellt', '<', grenzeAnfrage)
+        .where(({ eb, exists, not, selectFrom }) =>
+          not(
+            exists(
+              selectFrom('anfrage')
+                .select(eb.lit(1).as('x'))
+                .whereRef('anfrage.mandant_id', '=', 'sitzung_katalog.mandant_id')
+                .whereRef('anfrage.session_id', '=', 'sitzung_katalog.session_id'),
+            ),
+          ),
+        )
+        .executeTakeFirst();
+      neu('sitzung_katalog', isoTag(grenzeAnfrage), sitzungKatalog.numDeletedRows);
 
       const grenzeKontrolle = plusTage(heute, -m.aufbewahrung_kontrollsumme_tage);
       const kontrolle = await trx

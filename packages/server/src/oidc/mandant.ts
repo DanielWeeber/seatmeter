@@ -7,7 +7,7 @@ import { protokolliere } from '../audit/protokoll.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import { entschluessele } from '../krypto.js';
-import { ROLLEN, type Rolle } from '@seatmeter/shared';
+import { nurEntwickler, ROLLEN, type Rolle } from '@seatmeter/shared';
 import * as oidc from 'openid-client';
 import { geschuetztesFetch } from './ziel-schutz.js';
 import { VERWALTUNG_AUDIT } from '../mandant/verwaltung.js';
@@ -240,10 +240,14 @@ export async function mandantKontoAnmelden(
         })
         .returning(['id', 'benutzername', 'deaktiviert', 'passwort_hash'])
         .executeTakeFirstOrThrow();
+      // Nur `entwickler`: ohne Konto im Audit, das Anlegen passiert beim ersten Folgen des Links, direkt vor der Wahl.
+      const nurWahl = mitZuordnung && nurEntwickler([...soll.keys()]);
       await protokolliere(trx, {
-        benutzerId: neu.id,
+        benutzerId: nurWahl ? null : neu.id,
         aktion: VERWALTUNG_AUDIT.kontoAngelegt,
-        objekt: `benutzer:${neu.id} (OIDC des Mandanten)`,
+        objekt: nurWahl
+          ? 'OIDC des Mandanten, Rolle entwickler'
+          : `benutzer:${neu.id} (OIDC des Mandanten)`,
       });
       konto = neu;
     } else if (verknuepfen) {
@@ -266,6 +270,7 @@ export async function mandantKontoAnmelden(
         entziehen: 'quelle',
         akteur: konto.id,
         hinweis: 'OIDC-Gruppe',
+        ohneKontoBeiEntwickler: true,
       });
     }
     return { ok: true, benutzer: { id: konto.id, benutzername: konto.benutzername } };

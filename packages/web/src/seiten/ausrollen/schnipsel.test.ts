@@ -1,6 +1,10 @@
 // Schnipsel-Bausteine der Seite „Ausrollen“: gültiges JSON, Token nur im festen Header, Quoting im
 // Start-Wrapper und in den Agent-Befehlen.
-import { AGENT_STANDARD_PFAD } from '@seatmeter/shared';
+import {
+  AGENT_STANDARD_PFAD,
+  PROJEKTWAHL_PRUEF_PFAD,
+  PROJEKTWAHL_TOKEN_VARIABLE,
+} from '@seatmeter/shared';
 import { describe, expect, it } from 'vitest';
 import { AUSROLLEN } from '../../test/fixtures';
 import {
@@ -24,6 +28,55 @@ import {
 const k = AUSROLLEN;
 const ORGS = k.orgs.map((o) => o.org_uuid);
 const TOKEN = 'smi_beispiel0123456789';
+
+describe('Hook der Projektwahl in den Einstellungen', () => {
+  const basis: SchnipselOptionen = {
+    kopfzeilen: 'fest',
+    token: TOKEN,
+    agentPfad: AGENT_STANDARD_PFAD,
+    orgFestlegen: false,
+  };
+  const lese = (s: string) =>
+    JSON.parse(s) as {
+      env: Record<string, string>;
+      hooks?: { UserPromptSubmit: { hooks: { command: string; timeout: number }[] }[] };
+    };
+
+  it('fehlt ohne Option', () => {
+    expect(lese(managedSettings(k, basis)).hooks).toBeUndefined();
+    expect(lese(managedSettings(k, basis)).env[PROJEKTWAHL_TOKEN_VARIABLE]).toBeUndefined();
+  });
+
+  it('steht in MDM und Server-Managed Settings, mit Token in eigener Variable', () => {
+    for (const s of [managedSettings, serverManagedSettings]) {
+      const e = lese(s(k, { ...basis, projektwahl: true }));
+      const h = e.hooks?.UserPromptSubmit[0]?.hooks[0];
+      expect(h?.command).toContain(`${k.ingest_url}${PROJEKTWAHL_PRUEF_PFAD}`);
+      expect(h?.command).not.toContain(TOKEN);
+      expect(h?.timeout).toBe(5);
+      expect(e.env[PROJEKTWAHL_TOKEN_VARIABLE]).toBe(TOKEN);
+    }
+  });
+
+  it('fester Header ohne frisches Token: Platzhalter', () => {
+    const e = lese(managedSettings(k, { ...basis, token: null, projektwahl: true }));
+    expect(e.env[PROJEKTWAHL_TOKEN_VARIABLE]).toBe(TOKEN_PLATZHALTER);
+  });
+
+  it('mit Helper: Rechner-Token über den Agenten, keine Token-Variable', () => {
+    const e = lese(
+      managedSettings(k, { ...basis, kopfzeilen: 'helper', token: null, projektwahl: true }),
+    );
+    expect(e.env[PROJEKTWAHL_TOKEN_VARIABLE]).toBeUndefined();
+    expect(e.hooks?.UserPromptSubmit[0]?.hooks[0]?.command).toContain('otel-headers');
+  });
+
+  it('nie in den Benutzer-Einstellungen: dort ließe er sich entfernen', () => {
+    const e = lese(benutzerEinstellungen(k, { ...basis, projektwahl: true }));
+    expect(e.hooks).toBeUndefined();
+    expect(e.env[PROJEKTWAHL_TOKEN_VARIABLE]).toBeUndefined();
+  });
+});
 
 function optionen(teil: Partial<SchnipselOptionen> = {}): SchnipselOptionen {
   return {

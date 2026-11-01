@@ -12,7 +12,9 @@ Vor dem Start: Betriebsvereinbarung bzw. Zustimmung des Betriebsrats ([Betriebsr
 | **B** `seatmeter-agent`   | lokaler Agent liest nur die Zählerfelder der Transkripte (Hooks und/oder Sweeper)    | `https://<ingest-host>/api/ingest/v1/*` | empfohlen                  |
 | **C** Abgleich            | Enterprise Analytics API bzw. Team-Spend-Report (CSV) für den Abzug der Überschreitung | Server ruft ab bzw. Upload im Dashboard | optional                   |
 
-**Empfehlung:** A organisationsweit plus B auf allen Rechnern. B fängt verlorene OTel-Exporte auf, liefert die Aufteilung der Cache-Schreibvorgänge in 5 min/1 h und das Projekt je Anfrage (Sitzungen über mehrere Repos); A und B werden über die `request_id` zusammengeführt (keine Doppelzählung). Mit B kann A außerdem das Rechner-Token statt eines gemeinsamen Mandanten-Tokens nutzen. A allein ist das Minimum; dann gilt für Cache-Schreibvorgänge die Annahme „1 h“ (Einstellung `cache_write_annahme`).
+**Empfehlung:** A organisationsweit plus B auf allen Rechnern. B fängt verlorene OTel-Exporte auf, liefert die Aufteilung der Cache-Schreibvorgänge in 5 min/1 h und das Projekt je Anfrage (Sitzungen über mehrere Repos); A und B werden über die `request_id` zusammengeführt (keine Doppelzählung). Mit B kann A außerdem das Rechner-Token statt eines gemeinsamen Mandanten-Tokens nutzen.
+
+**A allein** ist das Minimum und reicht auch für die Zuordnung zu Projekten: Claude Code sendet mit `OTEL_METRICS_INCLUDE_REPOSITORY=true` das Repo je Anfrage, nur den Branch nicht. Das kostet: ein gemeinsames Mandanten-Token, das alle Beschäftigten lesen können und mit dem sich Nutzung melden lässt; für Cache-Schreibvorgänge gilt die Annahme „1 h“ (Einstellung `cache_write_annahme`); verlorene OTel-Exporte werden nicht nachgeholt; Issue-Schlüssel aus dem Branch fehlen. Wer keinen Agenten verteilen kann oder will, wählt diesen Weg (Abschnitt 4 und `docs/Projektkatalog.md`, Abschnitt „Ohne Agent“).
 
 ## 2. Vorbereitung
 
@@ -114,6 +116,7 @@ der Agent (Quelle B) die Schlüssel, je Transkriptzeile.
 4. Owner fügt das JSON aus Tab (b) in claude.ai unter Admin-Einstellungen → Claude Code → Managed settings ein.
 5. Optional Agent je Rechner (Tab e, Abschnitt 7) für Quelle B.
 6. Prüfen (Abschnitt 8).
+7. Optional Projekte zuordnen und die Projektwahl einführen, erst warnend, später blockierend: `docs/Projektkatalog.md`. Dafür auf dieser Seite die Option „Hook für die erzwungene Projektwahl aufnehmen“ wählen und das JSON erneut einfügen; sie gilt nur für die verwalteten Einstellungen (Tabs a und b) und braucht bei festem Mandanten-Token keinen Agenten.
 
 Ohne Weg (a) greift `forceLogin*` nicht. Sitzungen mit API-Schlüssel oder fremdem Konto bekommen die Server-Managed Settings aber gar nicht erst bzw. werden vom Abo-Filter verworfen.
 

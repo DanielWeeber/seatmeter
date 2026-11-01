@@ -43,6 +43,7 @@ const ROLLEN: Record<Rolle, string> = {
   projektleiter: 'Projektleitung',
   controller: 'Controller/Leser',
   betriebsrat: 'Betriebsrat',
+  entwickler: 'Entwicklung',
 };
 
 type Feld = keyof MandantEinstellungen;

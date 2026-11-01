@@ -19,6 +19,7 @@ import { mergePlugin } from './merge/index.js';
 import { oidcPlugin } from './oidc/index.js';
 import type { SeatmeterPlugin } from './plugin.js';
 import { preisePlugin } from './preise/index.js';
+import { projektkatalogPlugin } from './projektkatalog/index.js';
 import { scimPlugin } from './scim/index.js';
 
 export const KERN_MODULE: readonly SeatmeterPlugin[] = [
@@ -41,4 +42,5 @@ export const KERN_MODULE: readonly SeatmeterPlugin[] = [
   kontenPlugin,
   scimPlugin,
   jiraPlugin,
+  projektkatalogPlugin,
 ];

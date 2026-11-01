@@ -10,6 +10,7 @@ seatmeter zeigt Firmen mit Claude-Team- oder Claude-Enterprise-Sitzen, wie viele
 - **Datenschutz:** Personen pseudonym (HMAC mit Mandantensalt), Klarnamen nur per Opt-in, Auswertungsstufen und Mindestgruppen, keine Inhalte (Prompts, Antworten, Dateinamen, Befehle), Aufbewahrungsfristen mit Löschnachweis, Audit jedes Personenzugriffs, Bericht für den Betriebsrat.
 - **Anmeldung und Konten:** lokaler Login, vorgeschaltete Anmeldung per Proxy-Header, SSO per OIDC, Benutzer und Gruppen per SCIM 2.0 (Entra ID, Okta).
 - **Jira:** Kosten je Jira-Projekt und Issue über den Issue-Schlüssel im Branch-Namen.
+- **Projektkatalog:** Projektliste aus dem Projektmanagement-Werkzeug, Repos zuordnen, Kosten je Projekt, Projektwahl auf Wunsch erzwungen.
 - **Abgleich:** Enterprise Analytics API bzw. Team-Spend-Report (CSV), damit Überschreitungen des Kontingents nicht doppelt zählen.
 
 ## Aufbau
@@ -33,7 +34,7 @@ TypeScript (Node 24 LTS, React 19, Postgres 18), Monorepo mit pnpm workspaces:
 | `packages/web` | `@seatmeter/web` | Dashboard: Vite, React 19, Tailwind 4, TanStack Query |
 | `packages/agent` | `@seatmeter/agent` | CLI `seatmeter-agent` (Quelle B), Doku `packages/agent/README.md` |
 | `deploy/` | – | Betrieb mit Docker Compose, Backup-Skript, Installskript für den Agenten, Entwicklungsumgebung |
-| `docs/` | – | Architektur, Ausrollen, SSO und SCIM, Jira, Vorlage für den Betriebsrat |
+| `docs/` | – | Architektur, Ausrollen, SSO und SCIM, Jira, Projektkatalog, Vorlage für den Betriebsrat |
 
 ## Schnellstart mit Docker Compose
 
@@ -91,6 +92,7 @@ Die Server-Tests legen in der Datenbank aus `DATABASE_URL` eine frische Testdate
 - [docs/Ausrollen.md](docs/Ausrollen.md): Ausrollen bei Claude Team und Claude Enterprise
 - [docs/SSO-und-SCIM.md](docs/SSO-und-SCIM.md): Anmeldung per OIDC, Konten per SCIM
 - [docs/Jira.md](docs/Jira.md): Kosten je Jira-Projekt und Issue
+- [docs/Projektkatalog.md](docs/Projektkatalog.md): Repos und Sitzungen Projekten zuordnen, Projektwahl erzwingen
 - [docs/Betriebsrat-Vorlage.md](docs/Betriebsrat-Vorlage.md): Vorlage für Information und Zustimmung des Betriebsrats
 
 ## Lizenz
