@@ -25,7 +25,7 @@
     "argon2": "0.45.1",
     "fastify": "5.12.7",
     "kysely": "0.29.7",
-    "nodemailer": "7.0.13",
+    "nodemailer": "10.1.4",
     "openid-client": "6.8.8",
     "pg": "8.23.1",
     "protobufjs": "8.8.0",
