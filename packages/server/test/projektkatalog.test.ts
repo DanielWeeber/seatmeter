@@ -1,8 +1,15 @@
 // Projektkatalog: Import (JSON, CSV), Zuordnung ohne Umschreiben der Nutzung, Kosten je Katalog-Projekt mit
 // mehreren Repos und Sitzungen ohne Repo, eingefrorene Monate, Prüf-Route des Hooks, signierter Link,
 // Auswahlseite (erste Wahl gilt), Rechte der Rolle `entwickler` und Trennung der Mandanten.
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
+  kanonischeRepoInfo,
+  projektwahlHookBefehl,
+  PROJEKTWAHL_TOKEN_VARIABLE,
   katalogEinstellungSchema,
   katalogImportErgebnisSchema,
   katalogKostenAntwortSchema,
@@ -185,8 +192,8 @@ describe('Import', () => {
     const aktiv = katalogListeSchema.parse(
       (await app.inject({ url: '/api/v1/projektkatalog/projekte', headers: u.admin })).json(),
     );
-    expect(aktiv.projekte.map((p) => p.nummer)).toEqual(['P-100', 'P-400']);
-    expect(aktiv.projekte[0]?.name).toBe('Webshop neu');
+    expect(aktiv.projekte.map((p) => p.nummer)).toEqual(['P-400', 'P-100']);
+    expect(aktiv.projekte.find((p) => p.nummer === 'P-100')?.name).toBe('Webshop neu');
     expect(aktiv.projekte[0]?.quelle).toBe('json');
   });
 
@@ -633,6 +640,113 @@ describe('Prüf-Route des Hooks', () => {
     expect(r.statusCode).toBe(415);
   });
 
+  describe('scp-Remotes: echter Hook, dann Prüfung und Wahl', () => {
+    /** Führt den erzeugten Hook in bash aus, mit Nachbauten von git und curl, und liefert, was er als Repo sendet. */
+    const hookSendet = (remote: string): string => {
+      const ordner = mkdtempSync(join(tmpdir(), 'projektwahl-e2e-'));
+      try {
+        const bin = join(ordner, 'bin');
+        mkdirSync(bin);
+        const protokoll = join(ordner, 'curl.log');
+        for (const [name, inhalt] of [
+          ['git', `#!/bin/bash\nprintf '%s\\n' '${remote}'\n`],
+          [
+            'curl',
+            `#!/bin/bash\nprintf ' [%s]' "$@" >> '${protokoll}'\ncat >/dev/null\necho frei\n`,
+          ],
+        ] as const) {
+          writeFileSync(join(bin, name), inhalt);
+          chmodSync(join(bin, name), 0o755);
+        }
+        const r = spawnSync(
+          'bash',
+          ['-c', projektwahlHookBefehl({ ingestUrl: 'https://ingest.example.org' })],
+          {
+            input: JSON.stringify({ session_id: 'sitzung-e2e', prompt: 'nie senden' }),
+            encoding: 'utf8',
+            cwd: ordner,
+            env: {
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              HOME: ordner,
+              TMPDIR: ordner,
+              [PROJEKTWAHL_TOKEN_VARIABLE]: 'smi_erfunden',
+            },
+          },
+        );
+        expect(r.status, r.stderr).toBe(0);
+        const gesendet = /\[repo=([^\]]*)\]/.exec(readFileSync(protokoll, 'utf8'))?.[1];
+        if (gesendet === undefined) throw new Error('Hook hat kein Repo gesendet');
+        return gesendet;
+      } finally {
+        rmSync(ordner, { recursive: true, force: true });
+      }
+    };
+    const TOKEN_ALS_NUTZER = 'ghp_ERFUNDEN123';
+
+    it('git@, Token als Nutzer und gewöhnliches scp treffen dasselbe Repo; der Token kommt nie an', async () => {
+      const u = await umgebung();
+      await importieren(u);
+      await erzwingen(u);
+      const ids = await katalogIds(u);
+      const entwickler = await meldeAn(db, u.mandantId, 'entwickler');
+
+      const gesendet = hookSendet(`${TOKEN_ALS_NUTZER}@git.example.org:firma/a.git`);
+      expect(gesendet).toBe('git@git.example.org:firma/a.git');
+      const r = await pruefen(u.token, 'sitzung-1', gesendet);
+      const wahl = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projektwahl',
+        headers: entwickler.headers,
+        payload: { token: tokenAusLink(r.body), katalog_projekt_id: ids['P-100'] },
+      });
+      expect(wahl.statusCode, wahl.body).toBe(200);
+
+      for (const remote of [
+        `${TOKEN_ALS_NUTZER}@git.example.org:firma/a.git`,
+        'git@git.example.org:firma/a.git',
+        'deploy@git.example.org:firma/a',
+        'git.example.org:firma/a.git',
+        'https://git.example.org/firma/a',
+      ]) {
+        const repo = hookSendet(remote);
+        expect(repo, remote).not.toContain(TOKEN_ALS_NUTZER);
+        expect((await pruefen(u.token, 'sitzung-2', repo)).body, remote).toBe('zugeordnet\n');
+      }
+      const projekte = await withMandant(db, u.mandantId, (t) =>
+        t.selectFrom('projekt').selectAll().execute(),
+      );
+      expect(projekte).toHaveLength(1);
+      expect(JSON.stringify(projekte)).not.toContain(TOKEN_ALS_NUTZER);
+    });
+
+    it('der Server bildet denselben Schlüssel wie zuvor: Eine Wahl aus dem alten Hook gilt weiter', async () => {
+      for (const roh of [
+        `${TOKEN_ALS_NUTZER}@git.example.org:firma/b.git`,
+        'git@git.example.org:firma/b.git',
+        'git.example.org:firma/b.git',
+      ]) {
+        expect(kanonischeRepoInfo(roh)?.urlNorm, roh).toBe('https://git.example.org/firma/b');
+      }
+      const u = await umgebung();
+      await importieren(u);
+      await erzwingen(u);
+      const ids = await katalogIds(u);
+      const entwickler = await meldeAn(db, u.mandantId, 'entwickler');
+      // So sendete der Hook bisher: mit dem Nutzer.
+      const alt = await pruefen(u.token, 'sitzung-1', `deploy@git.example.org:firma/b.git`);
+      const wahl = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projektwahl',
+        headers: entwickler.headers,
+        payload: { token: tokenAusLink(alt.body), katalog_projekt_id: ids['P-200'] },
+      });
+      expect(wahl.statusCode, wahl.body).toBe(200);
+      const neu = hookSendet('deploy@git.example.org:firma/b.git');
+      expect(neu).toBe('git@git.example.org:firma/b.git');
+      expect((await pruefen(u.token, 'sitzung-2', neu)).body).toBe('zugeordnet\n');
+    });
+  });
+
   it('Repo ohne Zuordnung: Link; nach der Wahl „zugeordnet“, auch für andere Sitzungen und URL-Formen', async () => {
     const u = await umgebung();
     await importieren(u);
@@ -653,7 +767,7 @@ describe('Prüf-Route des Hooks', () => {
     const d = projektwahlAntwortSchema.parse(seite.json());
     expect(d.ziel).toEqual({ art: 'repo', name: 'firma/shop' });
     expect(d.zugeordnet).toBeNull();
-    expect(d.projekte.map((p) => p.nummer)).toEqual(['P-100', 'P-200', 'P-300']);
+    expect(d.projekte.map((p) => p.nummer)).toEqual(['P-300', 'P-200', 'P-100']);
 
     const wahl = await app.inject({
       method: 'POST',
@@ -1302,6 +1416,8 @@ describe('Link und Rechte', () => {
           .selectFrom('audit')
           .select(['aktion', 'benutzer_id'])
           .where('aktion', 'in', ['Anmeldung', 'Benutzer angelegt'])
+          // Ohne Reihenfolge schneidet `.slice(n)` unter Last die falschen Zeilen ab.
+          .orderBy('id')
           .execute(),
       );
     const vorher = (await eintraege()).length;
@@ -1363,6 +1479,7 @@ describe('Link und Rechte', () => {
           .selectFrom('audit')
           .select(['aktion', 'benutzer_id', 'objekt'])
           .where('aktion', 'in', ['Konto angelegt', 'Rolle zugewiesen', 'Rolle entzogen'])
+          .orderBy('id')
           .execute(),
       );
     const anmelden = (k: MandantOidc, groups: string[]) =>

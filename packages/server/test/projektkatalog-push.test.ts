@@ -2,6 +2,7 @@
 // Job, Zähler, verschachtelte Projekte. Nur erfundene Daten.
 import { randomUUID } from 'node:crypto';
 import {
+  KATALOG_NAME_MAX,
   katalogEinstellungSchema,
   katalogKostenAntwortSchema,
   katalogListeSchema,
@@ -15,9 +16,15 @@ import {
 } from '@seatmeter/shared';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'kysely';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { imJobLauf } from '../src/jobs/index.js';
-import { katalogSperren, syncBewerten, syncJob, syncPuffer } from '../src/projektkatalog/index.js';
+import {
+  fehlerArt,
+  katalogSperren,
+  syncBewerten,
+  syncJob,
+  syncPuffer,
+} from '../src/projektkatalog/index.js';
 import { erstelleDb, withMandant, type Db } from '../src/index.js';
 import { mandantAnlegen } from '../src/enrollment/mandant-anlegen.js';
 import {
@@ -397,6 +404,53 @@ describe('Antworten: immer genau 200, außer bei echten Fehlern', () => {
     }
   });
 
+  it('SEATMETER_RATE_* trifft Push, CSV-Upload und Status gültiger Tokens nie, auch mit sehr kleinen Werten', async () => {
+    const eng = await kernApp(db, inject('testDatenbankUrl'), {
+      SEATMETER_RATE_OTLP: '1/1',
+      SEATMETER_RATE_AGENT: '1/1',
+      SEATMETER_RATE_IP: '1/1',
+      SEATMETER_RATE_FEHLVERSUCHE: '1/1',
+      SEATMETER_RATE_ENROLL: '1/1',
+      SEATMETER_RATE_ENROLL_FEHLVERSUCHE: '1/1',
+    });
+    try {
+      const u = await umgebung();
+      const csv = await tokenAnlegen(u.admin, 'csv_import');
+      const lesen = await tokenAnlegen(u.admin, 'sync_status');
+      const codes = new Set<number>();
+      for (let i = 0; i < 60; i += 1) {
+        codes.add((await put(u.token, `r-${i}`, { name: 'R' }, {}, eng)).statusCode);
+      }
+      for (const t of [u.token, lesen.token]) {
+        for (let i = 0; i < 20; i += 1) {
+          const r = await eng.inject({ url: STATUS, headers: { authorization: `Bearer ${t}` } });
+          codes.add(r.statusCode);
+        }
+      }
+      for (let i = 0; i < 20; i += 1) {
+        const r = await eng.inject({
+          method: 'POST',
+          url: '/api/v1/projektkatalog/import/datei?vollstaendig=0',
+          headers: { authorization: `Bearer ${csv.token}`, 'content-type': 'text/csv' },
+          payload: `ID;Name\nc-${i};C\n`,
+        });
+        codes.add(r.statusCode);
+      }
+      expect([...codes]).toEqual([200]);
+      // Gegenprobe: Die Werte greifen, nur eben auf den Ingest-Pfaden.
+      const enroll = () =>
+        eng.inject({
+          method: 'POST',
+          url: '/api/agent/v1/enroll',
+          payload: { code: 'FALSCH', os: 'linux', agent_version: '0.1.2' },
+        });
+      await enroll();
+      expect((await enroll()).statusCode).toBe(429);
+    } finally {
+      await eng.close();
+    }
+  });
+
   it('gleichzeitige Anfragen derselben ID: alle 200, genau ein „neu“, eine Zeile', async () => {
     const u = await umgebung();
     const alle = await Promise.all(
@@ -498,19 +552,6 @@ describe('Feldregeln', () => {
     expect((await zeile(u, 'kind')).parent_externe_id).toBe('12');
     await ok(u, 'kind', { name: 'Kind', parentId: '  ' });
     expect((await zeile(u, 'kind')).parent_externe_id).toBeNull();
-  });
-
-  it('jede Anfrage aktualisiert zuletzt_gesehen, auch unverändert', async () => {
-    const u = await umgebung();
-    await ok(u, 'g', { name: 'N' });
-    await withMandant(db, u.mandantId, (t) =>
-      t
-        .updateTable('katalog_projekt')
-        .set({ zuletzt_gesehen: new Date('2020-01-01') })
-        .execute(),
-    );
-    expect((await ok(u, 'g', { name: 'N' })).ergebnis).toBe('unveraendert');
-    expect(new Date((await zeile(u, 'g')).zuletzt_gesehen).getFullYear()).toBeGreaterThan(2020);
   });
 
   it('Inaktiv lässt Zuordnungen stehen; legt nie einen Eintrag „Kein Projekt“ an', async () => {
@@ -828,11 +869,16 @@ describe('Signal und Job', () => {
 
   const H = 3_600_000;
   const T = 24 * H;
+  /** Macht Zeilen alt; die Quelle sendet dabei schon lange ohne Lücke. Ausfälle stellen die Tests mit `pushZeit` nach. */
   const altern = (u: Umgebung, ms: number, ids?: string[]) =>
-    withMandant(db, u.mandantId, (t) => {
+    withMandant(db, u.mandantId, async (t) => {
       let q = t.updateTable('katalog_projekt').set({ zuletzt_gesehen: new Date(Date.now() - ms) });
       if (ids) q = q.where('externe_id', 'in', ids);
-      return q.execute();
+      await q.execute();
+      await t
+        .updateTable('mandant_projektkatalog')
+        .set({ push_aktiv_ab: new Date(Date.now() - 400 * T) })
+        .execute();
     });
   const pushZeit = (u: Umgebung, ms: number) =>
     withMandant(db, u.mandantId, (t) =>
@@ -848,6 +894,309 @@ describe('Signal und Job', () => {
       .sort();
   const lauf = (u: Umgebung, o: Parameters<typeof syncJob>[1] = {}) =>
     syncJob(jobKontext(), { mandantId: u.mandantId, ...o });
+
+  describe('Unveränderte Anfragen schreiben nicht', () => {
+    /** Zeilenversion: Sie ändert sich mit jeder Schreibung, auch wenn alle Werte gleich bleiben. */
+    const version = async (u: Umgebung, id: string) => {
+      const r = await withMandant(db, u.mandantId, (t) =>
+        sql<{ v: string }>`
+          SELECT xmin::text || '/' || ctid::text AS v FROM katalog_projekt
+          WHERE externe_id = ${id}`.execute(t),
+      );
+      return r.rows[0]?.v;
+    };
+    const KOERPER = {
+      name: 'N',
+      number: 'N-1',
+      customer: 'K',
+      parentId: 'nie-gesendet',
+      status: 'closed',
+    };
+
+    it('jünger als 24 h: keine Schreibung, 200 unverändert; Zähler und Signal laufen gebündelt weiter', async () => {
+      const u = await umgebung();
+      await ok(u, 'g', KOERPER);
+      await syncPuffer(db).leeren();
+      await altern(u, 23 * H, ['g']);
+      await pushZeit(u, 10 * H);
+      const vorher = await version(u, 'g');
+      const auditVorher = (await audit(u)).length;
+      for (let i = 0; i < 3; i += 1) {
+        expect(await ok(u, 'g', KOERPER)).toMatchObject({
+          ergebnis: 'unveraendert',
+          active: false,
+        });
+      }
+      await syncPuffer(db).leeren();
+      expect(await version(u, 'g')).toBe(vorher);
+      const e = await einstellung(u);
+      expect(e.sync.status).toBe('ok');
+      expect(e.sync.tage[0]).toMatchObject({ neu: 1, unveraendert: 3 });
+      expect(Date.now() - new Date(e.sync.zuletzt_sync ?? 0).getTime()).toBeLessThan(H);
+      const { zuletzt_push: push } = await withMandant(db, u.mandantId, (t) =>
+        t.selectFrom('mandant_projektkatalog').select('zuletzt_push').executeTakeFirstOrThrow(),
+      );
+      expect(Date.now() - new Date(push ?? 0).getTime()).toBeLessThan(H);
+      // Keine Audit-Zeile je Anfrage.
+      expect(await audit(u)).toHaveLength(auditVorher);
+    });
+
+    it('älter als 24 h: schreibt nur zuletzt_gesehen, und danach wieder 24 h nichts', async () => {
+      const u = await umgebung();
+      await ok(u, 'g', KOERPER);
+      await altern(u, 25 * H, ['g']);
+      const vorher = await zeile(u, 'g');
+      const v1 = await version(u, 'g');
+      expect((await ok(u, 'g', KOERPER)).ergebnis).toBe('unveraendert');
+      const v2 = await version(u, 'g');
+      expect(v2).not.toBe(v1);
+      const nachher = await zeile(u, 'g');
+      expect(Date.now() - new Date(nachher.zuletzt_gesehen).getTime()).toBeLessThan(H);
+      expect({ ...nachher, zuletzt_gesehen: null }).toEqual({ ...vorher, zuletzt_gesehen: null });
+      expect((await ok(u, 'g', KOERPER)).ergebnis).toBe('unveraendert');
+      expect(await version(u, 'g')).toBe(v2);
+    });
+
+    it('vergleicht wie der Schreibweg: weggelassen, null, active und Status', async () => {
+      const u = await umgebung();
+      const nochmal = async (koerper: unknown, ergebnis: string) => {
+        const v = await version(u, 'f');
+        expect((await ok(u, 'f', koerper)).ergebnis, JSON.stringify(koerper)).toBe(ergebnis);
+        if (ergebnis === 'unveraendert') expect(await version(u, 'f')).toBe(v);
+        else expect(await version(u, 'f')).not.toBe(v);
+      };
+      await ok(u, 'f', { name: 'N', number: 'N-1', customer: 'K', status: 'closed' });
+      // Weggelassene Felder behalten den Wert; der Status bleibt geschlossen, solange er mitkommt.
+      await nochmal({ name: 'N', status: 'closed' }, 'unveraendert');
+      // Großschreibung des Status ist ein anderer Rohwert, aber weiter geschlossen.
+      await nochmal({ name: 'N', status: 'CLOSED' }, 'aktualisiert');
+      await nochmal({ name: 'N', status: 'CLOSED' }, 'unveraendert');
+      // Ohne Status und active heißt aktiv, auch wenn der gespeicherte Status geschlossen sagt.
+      await nochmal({ name: 'N' }, 'aktualisiert');
+      await nochmal({ name: 'N' }, 'unveraendert');
+      await nochmal({ name: 'N', active: true }, 'unveraendert');
+      await nochmal({ name: 'N', active: false }, 'aktualisiert');
+      await nochmal({ name: 'N', active: 'nein' }, 'unveraendert');
+      // Leeren und Setzen sind Änderungen, ein schon leeres Feld nicht.
+      await nochmal({ name: 'N', active: false, customer: null }, 'aktualisiert');
+      await nochmal({ name: 'N', active: false, customer: null }, 'unveraendert');
+      await nochmal({ name: 'N', active: false, customer: '' }, 'unveraendert');
+      await nochmal({ name: 'N', active: false, parentId: 'x' }, 'aktualisiert');
+      await nochmal({ name: 'N', active: false, parentId: 'x' }, 'unveraendert');
+      await nochmal({ name: '  N ', active: false }, 'unveraendert');
+      await nochmal({ name: 'M', active: false }, 'aktualisiert');
+      // Eine geänderte Liste der inaktiven Status wirkt mit der nächsten Anfrage.
+      await nochmal({ name: 'M', status: 'pausiert' }, 'aktualisiert');
+      await nochmal({ name: 'M', status: 'pausiert' }, 'unveraendert');
+      expect((await setzen(u, { inaktiv_status: ['pausiert'] })).statusCode).toBe(200);
+      await nochmal({ name: 'M', status: 'pausiert' }, 'aktualisiert');
+      expect((await zeile(u, 'f')).aktiv).toBe(false);
+    });
+
+    it('jedes Feld und die Liste der inaktiven Status: genau einmal aktualisiert, danach unverändert', async () => {
+      const u = await umgebung();
+      const k = { name: 'x', status: 'Offen', number: 'N', customer: 'K', parentId: 'p' };
+      const erg = async (koerper: unknown) => {
+        const r = await ok(u, 'x', koerper);
+        return `${r.ergebnis}/${r.active}`;
+      };
+      expect(await erg(k)).toBe('neu/true');
+      expect(await erg(k)).toBe('unveraendert/true');
+      await setzen(u, { inaktiv_status: ['offen'] });
+      expect(await erg(k)).toBe('aktualisiert/false');
+      expect(await erg(k)).toBe('unveraendert/false');
+      await setzen(u, { inaktiv_status: [] });
+      expect(await erg(k)).toBe('aktualisiert/true');
+      for (const a of [
+        { number: 'N2' },
+        { customer: 'K2' },
+        { parentId: 'p2' },
+        { status: 'S2' },
+        { active: false },
+        { active: true },
+      ]) {
+        expect(await erg({ name: 'x', ...a }), JSON.stringify(a)).toMatch(/^aktualisiert\//);
+      }
+      expect(await erg({ name: 'x' })).toBe('unveraendert/true');
+      expect(await erg({ name: 'x', number: null })).toBe('aktualisiert/true');
+      expect(await erg({ name: 'x', number: null })).toBe('unveraendert/true');
+    });
+
+    it('Kürzen mitten in einem Emoji: gleicher Wert bei jedem Lauf, also keine Schreibung', async () => {
+      const u = await umgebung();
+      const name = `${'a'.repeat(KATALOG_NAME_MAX - 1)}😀b`;
+      expect((await ok(u, 's', { name })).ergebnis).toBe('neu');
+      const v = await version(u, 's');
+      expect((await ok(u, 's', { name })).ergebnis).toBe('unveraendert');
+      expect((await ok(u, 's', { name })).ergebnis).toBe('unveraendert');
+      expect(await version(u, 's')).toBe(v);
+      expect((await zeile(u, 's')).name).toBe('a'.repeat(KATALOG_NAME_MAX - 1));
+      // Passt das Emoji noch ganz hinein, bleibt es.
+      const passt = `${'a'.repeat(KATALOG_NAME_MAX - 2)}😀b`;
+      await ok(u, 'g', { name: passt });
+      expect((await zeile(u, 'g')).name).toBe(`${'a'.repeat(KATALOG_NAME_MAX - 2)}😀`);
+      // Ein einzelnes Surrogat in der Eingabe fällt weg, statt beim Speichern zum Ersetzungszeichen zu werden.
+      const einzeln = '{"name":"vor\\ud83dnach"}';
+      expect((await ok(u, 'e', einzeln)).ergebnis).toBe('neu');
+      expect((await zeile(u, 'e')).name).toBe('vornach');
+      expect((await ok(u, 'e', einzeln)).ergebnis).toBe('unveraendert');
+    });
+
+    it('CSV-Zeile: Der erste Push ist eine echte Änderung, erst danach kann sie altern', async () => {
+      const u = await umgebung();
+      const csv = await tokenAnlegen(u.admin, 'csv_import');
+      const upload = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projektkatalog/import/datei?vollstaendig=0',
+        headers: { authorization: `Bearer ${csv.token}`, 'content-type': 'text/csv' },
+        payload: 'ID;Name\nc-1;Aus CSV\n',
+      });
+      expect(upload.statusCode, upload.body).toBe(200);
+      expect((await zeile(u, 'c-1')).quelle).toBe('csv');
+      expect((await ok(u, 'c-1', { name: 'Aus CSV' })).ergebnis).toBe('aktualisiert');
+      expect((await zeile(u, 'c-1')).quelle).toBe('api');
+      expect((await ok(u, 'c-1', { name: 'Aus CSV' })).ergebnis).toBe('unveraendert');
+    });
+
+    it('gleichzeitig: Eine Änderung geht nie verloren, auch wenn Unverändertes gerade auffrischt', async () => {
+      const u = await umgebung();
+      await ok(u, 'p', { name: 'A', customer: 'K' });
+      await altern(u, 25 * H, ['p']);
+      const alle = await Promise.all(
+        Array.from({ length: 40 }, (_, i) =>
+          put(u.token, 'p', i === 20 ? { name: 'A', customer: 'L' } : { name: 'A' }),
+        ),
+      );
+      expect(alle.map((r) => r.statusCode).filter((c) => c !== 200)).toEqual([]);
+      const ergebnisse = alle.map((r) => katalogPushAntwortSchema.parse(r.json()).ergebnis);
+      expect(ergebnisse.filter((e) => e === 'aktualisiert')).toHaveLength(1);
+      expect(ergebnisse.filter((e) => e === 'unveraendert')).toHaveLength(39);
+      const z = await zeile(u, 'p');
+      expect(z.kunde).toBe('L');
+      expect(Date.now() - new Date(z.zuletzt_gesehen).getTime()).toBeLessThan(H);
+      expect(await liste(u)).toHaveLength(1);
+    });
+
+    it('gleichzeitig dieselbe neue ID und dieselbe Änderung: eine Schreibung, Rest unverändert', async () => {
+      const u = await umgebung();
+      const neu = await Promise.all(
+        Array.from({ length: 20 }, () => put(u.token, 'n', { name: 'A' })),
+      );
+      const ergebnisse = neu.map((r) => katalogPushAntwortSchema.parse(r.json()).ergebnis);
+      expect(ergebnisse.filter((e) => e === 'neu')).toHaveLength(1);
+      expect(ergebnisse.filter((e) => e === 'unveraendert')).toHaveLength(19);
+      const geaendert = await Promise.all(
+        Array.from({ length: 20 }, () => put(u.token, 'n', { name: 'B' })),
+      );
+      const e2 = geaendert.map((r) => katalogPushAntwortSchema.parse(r.json()).ergebnis);
+      expect(e2.filter((e) => e === 'aktualisiert')).toHaveLength(1);
+      expect(e2.filter((e) => e === 'unveraendert')).toHaveLength(19);
+    });
+  });
+
+  describe('Stündliche volle Läufe', () => {
+    /** Lässt nur `Date` laufen; Beginn so weit zurück, dass die echte Sitzung des Admins gültig bleibt. */
+    const mitUhr = async (stundenZurueck: number, f: (start: number) => Promise<void>) => {
+      const start = Date.now() - stundenZurueck * H;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        await f(start);
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    it('tage=1: nichts flackert, auch wenn der Job mitten im Lauf feuert und Läufe versetzt beginnen', async () => {
+      const u = await umgebung();
+      await setzen(u, { sync_deaktivieren_tage: 1, sync_deaktivieren_max_prozent: 100 });
+      const ids = ['a', 'b', 'c', 'd'];
+      await mitUhr(101, async (start) => {
+        for (let h = 0; h < 100; h += 1) {
+          const beginn = start + h * H + ((h * 37) % 300) * 1000;
+          for (const [i, id] of ids.entries()) {
+            vi.setSystemTime(beginn + i * 10_000);
+            await ok(u, id, { name: id });
+            if (i === 1) {
+              const e = await lauf(u, { jetzt: new Date(Date.now()) });
+              expect(e.deaktiviert, `Stunde ${h}`).toBe(0);
+            }
+          }
+          const e = await lauf(u, { jetzt: new Date(beginn + H / 2) });
+          expect(e.deaktiviert, `Stunde ${h}, nach dem Lauf`).toBe(0);
+        }
+      });
+      expect(await aktivIds(u)).toEqual(ids);
+    });
+
+    it('tage=1: nicht mehr gesendet heißt inaktiv nach den Tagen bis einem Tag und einem Joblauf mehr, nie früher', async () => {
+      const u = await umgebung();
+      await setzen(u, { sync_deaktivieren_tage: 1, sync_deaktivieren_max_prozent: 100 });
+      // Zuletzt gesendet direkt vor und genau beim Auffrischen nach 24 h.
+      const zuletzt: Record<string, number> = { 'weg-23': 23, 'weg-24': 24 };
+      const inaktivBei: Record<string, number> = {};
+      await mitUhr(81, async (start) => {
+        for (let h = 0; h < 80; h += 1) {
+          vi.setSystemTime(start + h * H);
+          await ok(u, 'bleibt', { name: 'bleibt' });
+          for (const [id, letzte] of Object.entries(zuletzt)) {
+            if (h <= letzte) await ok(u, id, { name: id });
+          }
+          await lauf(u, { jetzt: new Date(start + h * H + 60_000) });
+          const inaktiv = await withMandant(db, u.mandantId, (t) =>
+            t
+              .selectFrom('katalog_projekt')
+              .select('externe_id')
+              .where('aktiv', '=', false)
+              .execute(),
+          );
+          for (const { externe_id: id } of inaktiv) inaktivBei[id] ??= h;
+        }
+      });
+      for (const [id, letzte] of Object.entries(zuletzt)) {
+        const bei = inaktivBei[id] ?? Number.NaN;
+        expect(bei - letzte, id).toBeGreaterThan(24);
+        expect(bei - letzte, id).toBeLessThanOrEqual(24 + 24 + 1);
+      }
+      expect(inaktivBei.bleibt).toBeUndefined();
+    });
+
+    it('nur unveränderte Anfragen halten den Status über die Warnfrist hinaus auf 200, Seite und Status stimmen überein', async () => {
+      const u = await umgebung();
+      const ids = ['a', 'b', 'c'];
+      const status = () =>
+        app.inject({ url: STATUS, headers: { authorization: `Bearer ${u.token}` } });
+      const vergleich = async () => {
+        const r = await status();
+        const k = katalogSyncStatusAntwortSchema.parse(r.json());
+        const seite = (await einstellung(u)).sync;
+        expect(seite.status).toBe(k.status);
+        expect(seite.zuletzt_sync).toBe(k.zuletzt_sync);
+        return { code: r.statusCode, ...k };
+      };
+      await mitUhr(120, async (start) => {
+        for (let h = 0; h <= 60; h += 1) {
+          vi.setSystemTime(start + h * H);
+          for (const id of ids) {
+            const e = await ok(u, id, { name: id });
+            expect(e.ergebnis).toBe(h === 0 ? 'neu' : 'unveraendert');
+          }
+          if (h === 60) {
+            const s = await vergleich();
+            expect(s).toMatchObject({ code: 200, status: 'ok', warnung_stunden: 48 });
+            expect(s.zuletzt_sync).toBe(new Date(start + 60 * H).toISOString());
+          }
+        }
+        // Die Zeilen selbst sind nur alle 24 h geschrieben, nicht bei jedem der 61 Läufe.
+        const z = await zeile(u, 'a');
+        expect(new Date(z.zuletzt_gesehen).toISOString()).toBe(
+          new Date(start + 48 * H).toISOString(),
+        );
+        // Kommt nichts mehr, greift die Warnung wie immer.
+        vi.setSystemTime(start + 109 * H);
+        expect(await vergleich()).toMatchObject({ code: 503, status: 'veraltet' });
+      });
+    });
+  });
 
   it('stille Quelle: Nichts altert, auch wenn die Tage kürzer sind als die Warnfrist', async () => {
     for (const [tage, warnung, stillStunden] of [
@@ -942,7 +1291,7 @@ describe('Signal und Job', () => {
       },
     };
     await setzen(u, { sync_deaktivieren_tage: 7 });
-    await altern(u, 8 * T);
+    await altern(u, 9 * T);
     // Der Lauf bricht nach einer Anfrage ab: eine gültige, eine abgelehnt.
     await ok(u, 'a', { name: 'a' });
     expect((await put(u.token, 'b', { name: '' })).statusCode).toBe(400);
@@ -953,7 +1302,7 @@ describe('Signal und Job', () => {
     expect(gesendet).toHaveLength(1);
     expect(
       (await audit(u)).filter((a) => a.aktion.startsWith('Deaktivieren')).map((a) => a.objekt),
-    ).toEqual(['anzahl:3 aktiv:4 grenze:25%']);
+    ).toEqual(['anzahl:3 gesamt:3 basis:4 erlaubt:1 grenze:25%']);
     const e = await einstellung(u);
     expect(e.sync).toMatchObject({ bremse_aktiv: true, deaktivieren_max_prozent: 25 });
     expect(e.sync.tage[0]?.abgelehnt).toBe(1);
@@ -971,6 +1320,352 @@ describe('Signal und Job', () => {
     expect((await setzen(u, { sync_deaktivieren_max_prozent: 0 })).statusCode).toBe(400);
   });
 
+  it('Bremse rechnet nur gegen gesendete Projekte: 30 CSV-Zeilen schützen keine 9 von 10 gesendeten', async () => {
+    const u = await umgebung();
+    const csv = await tokenAnlegen(u.admin, 'csv_import');
+    const zeilen = Array.from({ length: 30 }, (_, i) => `c-${i};CSV ${i}`).join('\n');
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/projektkatalog/import/datei?vollstaendig=0',
+      headers: { authorization: `Bearer ${csv.token}`, 'content-type': 'text/csv' },
+      payload: `ID;Name\n${zeilen}\n`,
+    });
+    expect(r.statusCode, r.body).toBe(200);
+    const ids = Array.from({ length: 10 }, (_, i) => `p-${i}`);
+    for (const id of ids) await ok(u, id, { name: id });
+    await syncPuffer(db).leeren();
+    await setzen(u, { sync_deaktivieren_tage: 7 });
+    await altern(u, 9 * T, ids.slice(0, 9));
+    expect(await lauf(u)).toMatchObject({ gebremst: 1, deaktiviert: 0 });
+    expect(await aktivIds(u)).toHaveLength(40);
+  });
+
+  it('Bremse im kleinen Katalog: Ein Projekt darf immer gehen, nie mehr als der Anteil; leer wird er nicht', async () => {
+    const u = await umgebung();
+    for (const id of ['a', 'b', 'c']) await ok(u, id, { name: id });
+    await syncPuffer(db).leeren();
+    await setzen(u, { sync_deaktivieren_tage: 7 });
+    // 1 von 3 wäre über 25 %, aber allein bliebe es für immer stehen.
+    await altern(u, 9 * T, ['a']);
+    expect(await lauf(u)).toMatchObject({ gebremst: 0, deaktiviert: 1 });
+    expect(await aktivIds(u)).toEqual(['b', 'c']);
+    // Das nächste im selben Zeitraum wäre zu viel; ist er vorbei, geht es, und das gerade gesendete bleibt.
+    await altern(u, 9 * T, ['b']);
+    await ok(u, 'c', { name: 'c' });
+    expect(await lauf(u)).toMatchObject({ gebremst: 1, deaktiviert: 0 });
+    await withMandant(db, u.mandantId, (t) =>
+      t
+        .updateTable('katalog_projekt')
+        .set({ veraltet_seit: new Date(Date.now() - 30 * T) })
+        .where('externe_id', '=', 'a')
+        .execute(),
+    );
+    expect(await lauf(u)).toMatchObject({ gebremst: 0, deaktiviert: 1 });
+    expect(await aktivIds(u)).toEqual(['c']);
+    await ok(u, 'c', { name: 'c' });
+    expect(await lauf(u)).toMatchObject({ gebremst: 0, deaktiviert: 0 });
+    expect(await aktivIds(u)).toEqual(['c']);
+
+    // Mehr als eins bei wenigen: Grenze greift weiter.
+    const v = await umgebung();
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) await ok(v, id, { name: id });
+    await syncPuffer(db).leeren();
+    await setzen(v, { sync_deaktivieren_tage: 7 });
+    await altern(v, 9 * T, ['a', 'b']);
+    expect(await lauf(v)).toMatchObject({ gebremst: 0, deaktiviert: 2 });
+    const w = await umgebung();
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) await ok(w, id, { name: id });
+    await syncPuffer(db).leeren();
+    await setzen(w, { sync_deaktivieren_tage: 7 });
+    await altern(w, 9 * T, ['a', 'b', 'c']);
+    expect(await lauf(w)).toMatchObject({ gebremst: 1, deaktiviert: 0 });
+  });
+
+  describe('Ein Ausfall zählt nicht als Alter', () => {
+    const pushAktivAb = async (u: Umgebung) =>
+      (
+        await withMandant(db, u.mandantId, (t) =>
+          t.selectFrom('mandant_projektkatalog').select('push_aktiv_ab').executeTakeFirstOrThrow(),
+        )
+      ).push_aktiv_ab;
+    const hundert = Array.from({ length: 100 }, (_, i) => `p${i}`);
+
+    it('Ausfall 9 Tage, tage=7, der erste Lauf danach bricht bei 80 % ab: nichts wird deaktiviert, kein Alarm', async () => {
+      const u = await umgebung();
+      for (const id of hundert) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      await setzen(u, { sync_deaktivieren_tage: 7 });
+      await altern(u, 9 * T);
+      await pushZeit(u, 9 * T);
+      expect(await lauf(u)).toMatchObject({ uebersprungen: 1, deaktiviert: 0 });
+      for (const id of hundert.slice(0, 80)) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      expect(Date.now() - new Date((await pushAktivAb(u)) ?? 0).getTime()).toBeLessThan(H);
+      expect(await lauf(u)).toMatchObject({
+        uebersprungen: 1,
+        deaktiviert: 0,
+        gebremst: 0,
+        alarme: 0,
+      });
+      expect(await aktivIds(u)).toHaveLength(100);
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(false);
+      // Senden sie wieder so lange, wie die Tage sagen, und fehlen die 20 weiter, gelten sie als entfallen.
+      await withMandant(db, u.mandantId, (t) =>
+        t
+          .updateTable('mandant_projektkatalog')
+          .set({ push_aktiv_ab: new Date(Date.now() - 7 * T) })
+          .execute(),
+      );
+      await ok(u, 'p0', { name: 'p0' });
+      expect(await lauf(u)).toMatchObject({ uebersprungen: 0, deaktiviert: 20, gebremst: 0 });
+    });
+
+    it('Lücke 26 h, tage=1, der erste Lauf danach bricht bei 85 % ab: nichts wird deaktiviert', async () => {
+      const u = await umgebung();
+      for (const id of hundert) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      await setzen(u, { sync_deaktivieren_tage: 1 });
+      await altern(u, 49 * H);
+      await pushZeit(u, 26 * H);
+      for (const id of hundert.slice(0, 85)) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      expect(await lauf(u)).toMatchObject({ uebersprungen: 1, deaktiviert: 0, gebremst: 0 });
+      expect(await aktivIds(u)).toHaveLength(100);
+    });
+
+    it('Quelle mit einem Lauf je Tag und Lücken um 24 h: bleibt durchgehend und altert weiter', async () => {
+      const u = await umgebung();
+      await setzen(u, { sync_deaktivieren_tage: 2 });
+      const start = Date.now() - 12 * T;
+      const zeitpunkt = (tag: number) => start + tag * T + (tag % 2 === 0 ? -1 : 1) * 30 * 60_000;
+      let inaktivAm: number | null = null;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        for (let tag = 0; tag < 10; tag += 1) {
+          vi.setSystemTime(zeitpunkt(tag));
+          for (const id of ['a', 'b', 'c', 'd']) await ok(u, id, { name: id });
+          if (tag <= 2) await ok(u, 'weg', { name: 'weg' });
+          await lauf(u, { jetzt: new Date(zeitpunkt(tag) + 60_000) });
+          if (inaktivAm === null && !(await zeile(u, 'weg')).aktiv) inaktivAm = tag;
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+      // Lücken von 25 h und 23 h: kein Neubeginn.
+      expect(new Date((await pushAktivAb(u)) ?? 0).toISOString()).toBe(
+        new Date(zeitpunkt(0)).toISOString(),
+      );
+      expect(inaktivAm).not.toBeNull();
+      expect((inaktivAm ?? 0) - 2).toBeGreaterThan(2);
+      expect(await aktivIds(u)).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('die Lücke zählt ab dem letzten Push: 25 h bleibt durchgehend, darüber beginnt es neu', async () => {
+      const u = await umgebung();
+      await ok(u, 'a', { name: 'a' });
+      await syncPuffer(db).leeren();
+      const anfang = new Date(Date.now() - 30 * T);
+      const stellen = (push: Date) =>
+        withMandant(db, u.mandantId, (t) =>
+          t
+            .updateTable('mandant_projektkatalog')
+            .set({ zuletzt_push: push, push_aktiv_ab: anfang })
+            .execute(),
+        );
+      await stellen(new Date(Date.now() - 24.5 * H));
+      await ok(u, 'a', { name: 'a' });
+      await syncPuffer(db).leeren();
+      expect(await pushAktivAb(u)).toEqual(anfang);
+      await stellen(new Date(Date.now() - 25.5 * H));
+      await ok(u, 'a', { name: 'a' });
+      await syncPuffer(db).leeren();
+      expect(Date.now() - new Date((await pushAktivAb(u)) ?? 0).getTime()).toBeLessThan(H);
+    });
+  });
+
+  describe('Bremse zählt über den Zeitraum', () => {
+    const mitKanal = async (u: Umgebung) => {
+      const kanal = await app.inject({
+        method: 'POST',
+        url: '/api/v1/alarmkanal',
+        headers: u.admin,
+        payload: {
+          typ: 'webhook',
+          bezeichnung: 'H',
+          konfig: { url: 'https://hooks.example.org/x' },
+        },
+      });
+      expect(kanal.statusCode).toBeLessThan(300);
+      const ereignisse: string[] = [];
+      const zustell = {
+        fetch: (_u: string, init?: RequestInit) => {
+          ereignisse.push((JSON.parse(String(init?.body)) as { ereignis: string }).ereignis);
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        },
+      };
+      return { ereignisse, zustell };
+    };
+
+    it('gestaffelt alternde Projekte kommen nicht in kleinen Scheiben durch', async () => {
+      const u = await umgebung();
+      const ids = Array.from({ length: 40 }, (_, i) => `p-${i}`);
+      for (const id of ids) await ok(u, id, { name: id });
+      await ok(u, 'live', { name: 'live' });
+      await setzen(u, { sync_deaktivieren_tage: 1 });
+      const { ereignisse, zustell } = await mitKanal(u);
+      const laeufe = [];
+      // Jede Stunde werden 8 weitere alt, jede Scheibe allein läge unter 25 %.
+      for (let b = 0; b < 5; b += 1) {
+        await altern(u, 3 * T, ids.slice(b * 8, (b + 1) * 8));
+        await ok(u, 'live', { name: 'live' });
+        laeufe.push(await lauf(u, { zustell }));
+      }
+      expect(laeufe[0]).toMatchObject({ deaktiviert: 8, gebremst: 0 });
+      for (const l of laeufe.slice(1)) expect(l).toMatchObject({ deaktiviert: 0, gebremst: 1 });
+      expect(await aktivIds(u)).toHaveLength(33);
+      expect(ereignisse).toEqual(['seatmeter.katalog_bremse']);
+      const zeile = (await audit(u)).find((a) => a.aktion.startsWith('Deaktivieren'));
+      expect(zeile?.objekt).toBe('anzahl:8 gesamt:16 basis:41 erlaubt:10 grenze:25%');
+    });
+
+    it('Schwund von 20 % je Tag: Der erste Schub geht durch, dann hält es an und alarmiert einmal', async () => {
+      const u = await umgebung();
+      await setzen(u, { sync_deaktivieren_tage: 1 });
+      const { ereignisse, zustell } = await mitKanal(u);
+      let gesendet = Array.from({ length: 50 }, (_, i) => `p-${i}`);
+      const start = Date.now() - 15 * T;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        for (let tag = 0; tag < 14; tag += 1) {
+          vi.setSystemTime(start + tag * T);
+          for (const id of gesendet) await ok(u, id, { name: id });
+          await lauf(u, { jetzt: new Date(start + tag * T + 60_000), zustell });
+          gesendet = gesendet.slice(0, Math.max(1, Math.floor(gesendet.length * 0.8)));
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+      // Ohne Summe über den Zeitraum blieben von 50 nur eine Handvoll.
+      expect(await aktivIds(u)).toHaveLength(40);
+      expect(ereignisse).toEqual(['seatmeter.katalog_bremse']);
+    });
+
+    it('ein zurückgekehrtes Projekt zählt nicht mehr', async () => {
+      const u = await umgebung();
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+      for (const id of ids) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      await setzen(u, { sync_deaktivieren_tage: 7 });
+      await altern(u, 9 * T, ['a', 'b']);
+      expect(await lauf(u)).toMatchObject({ deaktiviert: 2 });
+      expect((await zeile(u, 'a')).veraltet_seit).not.toBeNull();
+      expect(await ok(u, 'a', { name: 'a' })).toMatchObject({
+        ergebnis: 'aktualisiert',
+        active: true,
+      });
+      expect((await zeile(u, 'a')).veraltet_seit).toBeNull();
+      // b plus c: zwei von acht, das ist erlaubt. Zählte a weiter, wären es drei.
+      await altern(u, 9 * T, ['c']);
+      await ok(u, 'd', { name: 'd' });
+      expect(await lauf(u)).toMatchObject({ deaktiviert: 1, gebremst: 0 });
+    });
+
+    it('stille Quelle lässt den Halt stehen, ohne neuen Alarm; erst eine echte Prüfung löst ihn', async () => {
+      const u = await umgebung();
+      const ids = Array.from({ length: 8 }, (_, i) => `p-${i}`);
+      for (const id of ids) await ok(u, id, { name: id });
+      await setzen(u, { sync_deaktivieren_tage: 7 });
+      const { ereignisse, zustell } = await mitKanal(u);
+      await altern(u, 9 * T, ids.slice(0, 6));
+      await ok(u, 'p-7', { name: 'p-7' });
+      expect(await lauf(u, { zustell })).toMatchObject({ gebremst: 1, alarme: 1 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(true);
+      // Quelle verstummt: übersprungen, nicht geprüft.
+      const stumm = new Date(Date.now() + 49 * H);
+      const still = await lauf(u, { jetzt: stumm, zustell });
+      expect(still).toMatchObject({ uebersprungen: 1, gebremst: 0 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(true);
+      // Zurück und immer noch zu viel: kein zweiter Alarm für denselben Halt.
+      await ok(u, 'p-7', { name: 'p-7' });
+      expect(await lauf(u, { zustell })).toMatchObject({ gebremst: 1, alarme: 0 });
+      expect(ereignisse.filter((x) => x === 'seatmeter.katalog_bremse')).toHaveLength(1);
+      // Vollständiger Lauf: Die Projekte kommen zurück, die Prüfung findet nichts, der Halt ist weg.
+      for (const id of ids) await ok(u, id, { name: id });
+      expect(await lauf(u, { zustell })).toMatchObject({ gebremst: 0, deaktiviert: 0 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(false);
+    });
+
+    it('Deaktivieren ausgeschaltet: Der Halt ist nicht mehr anwendbar und verschwindet', async () => {
+      const u = await umgebung();
+      const ids = Array.from({ length: 8 }, (_, i) => `p-${i}`);
+      for (const id of ids) await ok(u, id, { name: id });
+      await setzen(u, { sync_deaktivieren_tage: 7 });
+      await altern(u, 9 * T, ids.slice(0, 6));
+      await ok(u, 'p-7', { name: 'p-7' });
+      expect(await lauf(u)).toMatchObject({ gebremst: 1 });
+      await setzen(u, { sync_deaktivieren_tage: null });
+      expect(await lauf(u)).toMatchObject({ gebremst: 0, uebersprungen: 0 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(false);
+    });
+
+    it('wegen Alters inaktiv und wieder als inaktiv gesendet: Merker weg, zählt nicht mehr für die Bremse', async () => {
+      const u = await umgebung();
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+      for (const id of ids) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      await setzen(u, { sync_deaktivieren_tage: 1 });
+      await altern(u, 4 * T, ['a', 'b']);
+      expect(await lauf(u)).toMatchObject({ deaktiviert: 2, gebremst: 0 });
+      for (const id of ['a', 'b']) {
+        expect((await zeile(u, id)).veraltet_seit).not.toBeNull();
+        expect(await ok(u, id, { name: id, active: false })).toMatchObject({
+          ergebnis: 'aktualisiert',
+          active: false,
+        });
+        expect((await zeile(u, id)).veraltet_seit).toBeNull();
+        expect((await zeile(u, id)).aktiv).toBe(false);
+        // Danach wieder ohne Schreiben.
+        expect((await ok(u, id, { name: id, active: false })).ergebnis).toBe('unveraendert');
+      }
+      // Zählten a und b weiter, wären es mit c drei von acht, erlaubt sind zwei.
+      await altern(u, 4 * T, ['c']);
+      await ok(u, 'd', { name: 'd' });
+      expect(await lauf(u)).toMatchObject({ deaktiviert: 1, gebremst: 0 });
+    });
+
+    it('Ausweg: Grenze einmal erhöhen und zurückstellen; Speichern ohne Änderung beginnt nichts neu', async () => {
+      const u = await umgebung();
+      const ids = Array.from({ length: 20 }, (_, i) => `p-${i}`);
+      for (const id of ids) await ok(u, id, { name: id });
+      await syncPuffer(db).leeren();
+      await setzen(u, { sync_deaktivieren_tage: 7 });
+      await altern(u, 9 * T, ids.slice(0, 8));
+      expect(await lauf(u)).toMatchObject({ gebremst: 1, deaktiviert: 0 });
+      // Ein vollständiger Lauf hülfe hier nicht: Die acht sind wirklich entfallen.
+      for (const id of ids.slice(8)) await ok(u, id, { name: id });
+      expect(await lauf(u)).toMatchObject({ gebremst: 1, deaktiviert: 0 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(true);
+      await setzen(u, { sync_deaktivieren_max_prozent: 100 });
+      expect(await lauf(u)).toMatchObject({ gebremst: 0, deaktiviert: 8 });
+      expect((await einstellung(u)).sync.bremse_aktiv).toBe(false);
+      await setzen(u, { sync_deaktivieren_max_prozent: 25 });
+      const ab = await withMandant(db, u.mandantId, (t) =>
+        t.selectFrom('mandant_projektkatalog').select('sync_fenster_ab').executeTakeFirstOrThrow(),
+      );
+      expect(ab.sync_fenster_ab).not.toBeNull();
+      // Die Seite speichert die Grenze immer mit: gleicher Wert, gleicher Zeitraum.
+      await setzen(u, { sync_deaktivieren_max_prozent: 25 });
+      const ab2 = await withMandant(db, u.mandantId, (t) =>
+        t.selectFrom('mandant_projektkatalog').select('sync_fenster_ab').executeTakeFirstOrThrow(),
+      );
+      expect(ab2.sync_fenster_ab).toEqual(ab.sync_fenster_ab);
+      // Danach hält das nächste entfallene Projekt nicht gleich wieder an.
+      await altern(u, 9 * T, ['p-8']);
+      await ok(u, 'p-9', { name: 'p-9' });
+      expect(await lauf(u)).toMatchObject({ gebremst: 0, deaktiviert: 1 });
+    });
+  });
+
   it('nur gesendete Projekte altern; CSV-Zeilen nicht, und eine Teilliste ist kein Lebenszeichen', async () => {
     const u = await umgebung();
     const csv = await tokenAnlegen(u.admin, 'csv_import');
@@ -985,7 +1680,7 @@ describe('Signal und Job', () => {
     for (let i = 0; i < 8; i += 1) await ok(u, `p-${i}`, { name: 'P' });
     await syncPuffer(db).leeren();
     await setzen(u, { sync_deaktivieren_tage: 7 });
-    await altern(u, 8 * T, ['c-1', 'p-0']);
+    await altern(u, 9 * T, ['c-1', 'p-0']);
     expect(await lauf(u)).toMatchObject({ deaktiviert: 1 });
     const stand = await aktivIds(u);
     expect(stand).toContain('c-1');
@@ -1052,6 +1747,14 @@ describe('Signal und Job', () => {
     );
     expect(lauf2.status).toBe('fehler');
     expect(lauf2.fehler).toContain(a.mandantId);
+    // Die Klasse nennt die Ursache, der Text selbst bleibt draußen.
+    expect(lauf2.fehler).toMatch(new RegExp(`${a.mandantId} \\(\\w*Error\\)`));
+    expect(fehlerArt(Object.assign(new Error('geheim: Wert'), { code: '23505' }))).toBe(
+      'Error 23505',
+    );
+    expect(fehlerArt(Object.assign(new TypeError('x'), { code: 'ERR_CRYPTO' }))).toBe('TypeError');
+    expect(fehlerArt('Text')).toBe('string');
+    expect(fehlerArt(null)).toBe('object');
     await db.deleteFrom('alarm_kanal').where('mandant_id', '=', a.mandantId).execute();
   });
 
@@ -1177,13 +1880,13 @@ describe('Verschachtelte Projekte', () => {
     expect(aktive.map((p) => [p.externe_id, p.aktiv, p.pfad])).toEqual([
       ['a', false, 'Archiv'],
       ['a-1', true, 'Archiv › Nachlauf'],
-      ['waise', true, 'Waise'],
       ['selbst', true, 'Selbst'],
-      ['z1', true, 'Z1'],
-      ['z2', true, 'Z2'],
+      ['waise', true, 'Waise'],
       ['w', true, 'Webshop'],
       ['w-1', true, 'Webshop › AP Login'],
       ['w-1-1', true, 'Webshop › AP Login › Passwort'],
+      ['z1', true, 'Z1'],
+      ['z2', true, 'Z2'],
     ]);
     // Inaktiv ohne aktive Nachkommen steht in der Auswahl nicht, in der Übersicht schon.
     expect(aktive.map((p) => p.externe_id)).not.toContain('b');

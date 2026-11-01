@@ -3,6 +3,7 @@
 // danach und nach der Annahme wertlos. Fehlversuche je Adresse begrenzt.
 //   POST /api/v1/auth/einladung/pruefen  { token }            → { benutzername, gueltig_bis }
 //   POST /api/v1/auth/einladung          { token, passwort }  → wie /auth/login (Sitzung, /me-Antwort)
+import { nurEntwickler } from '@seatmeter/shared';
 import { protokolliere } from '../audit/protokoll.js';
 import { passwortHash } from '../auth/index.js';
 import { erstelleSitzung, meAntwort } from '../auth/kontext.js';
@@ -74,10 +75,19 @@ export function registriereEinladungRouten(app: FastifyInstance, db: Db): void {
         .where('deaktiviert', 'is', null)
         .executeTakeFirst();
       if (Number(r.numUpdatedRows) === 0) return false;
+      const rollen = await trx
+        .selectFrom('rolle')
+        .select('rolle')
+        .where('mandant_id', '=', einladung.mandant_id)
+        .where('benutzer_id', '=', einladung.benutzer_id)
+        .execute();
+      // Nur `entwickler`: ohne Konto im Audit, wie beim Anlegen über SSO. Die Annahme liegt direkt vor der Wahl und ließe
+      // sich ihr sonst zuordnen.
+      const nurWahl = nurEntwickler(rollen.map((z) => z.rolle));
       await protokolliere(trx, {
-        benutzerId: einladung.benutzer_id,
+        benutzerId: nurWahl ? null : einladung.benutzer_id,
         aktion: VERWALTUNG_AUDIT.einladungAngenommen,
-        objekt: `benutzer:${einladung.benutzer_id}`,
+        objekt: nurWahl ? 'Rolle entwickler' : `benutzer:${einladung.benutzer_id}`,
       });
       return true;
     });

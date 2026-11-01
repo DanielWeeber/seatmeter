@@ -50,6 +50,8 @@ Warum überhaupt Personenbezug? Sitzkosten fallen je Person an. Um sie auf Proje
 | Organisations-ID       | ID der Anthropic-Organisation von `<Firma>` (Positivliste)                                                                                   | Filter „nur Abo“                          |
 | Dashboard-Konten       | Anmeldename, Rollen, Zugriffs- und Änderungsprotokoll; für Konten nur mit der Rolle `entwickler` (Projektwahl) weder Anmelde-Eintrag noch letzte Anmeldung; Anlegen und Rollenvergabe bei der ersten SSO-Anmeldung ohne Konto im Protokoll                                                                                        | Zugriffskontrolle, Nachweis               |
 
+**Grenze bei der Projektwahl:** Welches Konto ein Projekt gewählt hat, speichert seatmeter nicht. Lädt aber ein Admin ein Konto ein oder vergibt von Hand eine Rolle, steht das mit Konto im Protokoll, weil der Admin es offen vornimmt. In einem kleinen Mandanten kann der zeitliche Abstand zwischen einer solchen Einladung und einer späteren Wahl einen Rückschluss auf die wählende Person erlauben. Über SSO angelegte Konten betrifft das nicht, dort stehen Anlegen und Rollenvergabe ohne Konto im Protokoll.
+
 ### 4.2 Ausdrücklich nicht erfasst
 
 - Inhalte: Prompts, Antworten, Denkschritte, Tool-Eingaben und -Ausgaben

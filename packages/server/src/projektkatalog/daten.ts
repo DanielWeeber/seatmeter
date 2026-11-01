@@ -141,6 +141,7 @@ export async function katalogAbgleichen(
             aktiv: eb.ref('excluded.aktiv'),
             quelle: eb.ref('excluded.quelle'),
             zuletzt_gesehen: eb.ref('excluded.zuletzt_gesehen'),
+            veraltet_seit: null,
           })),
         )
         .execute();
@@ -240,7 +241,7 @@ export async function katalogPfade(trx: KatalogTrx): Promise<Map<string, string>
 
 /**
  * Projekte in Baumreihenfolge. `nurAktive`: aktive Projekte plus ihre inaktiven Vorfahren als Kontext (nicht wählbar),
- * damit die Auswahl die Hierarchie zeigen kann.
+ * damit die Auswahl die Hierarchie zeigen kann. Inaktive ohne Aktives darunter kommen nicht mit.
  */
 export async function projekteLaden(
   trx: KatalogTrx,

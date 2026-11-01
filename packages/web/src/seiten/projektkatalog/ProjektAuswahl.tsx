@@ -1,6 +1,6 @@
 // Durchsuchbare Projektliste als Baum für die Zuordnung und die Auswahlseite: Jedes aktive Projekt ist wählbar, auf jeder
-// Ebene; inaktive Vorfahren stehen als Kontext dabei. Suche über Nummer, Name und Kunde, Filter
-// je Kunde. Bewusst ohne Eintrag „Kein Projekt“: Wer die Liste öffnet, wählt ein Projekt aus dem Katalog.
+// Ebene; inaktive Einträge mit Aktivem darunter stehen ausgegraut dabei, andere inaktive gar nicht. Suche über Nummer,
+// Name und Kunde, Filter je Kunde. Bewusst ohne Eintrag „Kein Projekt“: Wer die Liste öffnet, wählt ein Projekt aus dem Katalog.
 import {
   katalogBaumBauen,
   katalogBaumFiltern,
@@ -14,8 +14,9 @@ import { useId, useMemo, useState } from 'react';
 export const AUSWAHL_MAX_TREFFER = 100;
 
 /**
- * Treffer für Suchtext und Kunde plus ihre Vorfahren als Kontext, in Baumreihenfolge; alle Wörter müssen vorkommen,
- * Groß-/Kleinschreibung egal. Vorfahren bleiben sichtbar, auch wenn sie selbst nicht passen.
+ * Treffer für Suchtext und Kunde mit ihren Vorfahren als Kontext und ihren aktiven Nachfahren, in Baumreihenfolge. Alle
+ * Wörter müssen als Teil von Nummer, Name oder Kunde vorkommen, in beliebiger Reihenfolge, Groß-/Kleinschreibung egal.
+ * Unter dem Kundenfilter bleiben Nachfahren ohne eigenen Kunden dabei, solche mit einem anderen nicht.
  */
 export function filtereBaum<T extends KatalogKurz>(
   baum: readonly KatalogBaumZeile<T>[],
@@ -23,11 +24,15 @@ export function filtereBaum<T extends KatalogKurz>(
   kunde: string,
 ): KatalogBaumTreffer<T>[] {
   const woerter = suche.toLowerCase().split(/\s+/).filter(Boolean);
-  return katalogBaumFiltern(baum, (p) => {
-    if (kunde && p.kunde !== kunde) return false;
-    const text = `${p.nummer} ${p.name} ${p.kunde ?? ''}`.toLowerCase();
-    return woerter.every((w) => text.includes(w));
-  });
+  return katalogBaumFiltern(
+    baum,
+    (p) => {
+      if (kunde && p.kunde !== kunde) return false;
+      const text = `${p.nummer} ${p.name} ${p.kunde ?? ''}`.toLowerCase();
+      return woerter.every((w) => text.includes(w));
+    },
+    (p) => !kunde || !p.kunde || p.kunde === kunde,
+  );
 }
 
 /** Bestätigung und gewählter Wert: mit vollem Pfad, z. B. `P-1 – Webshop › AP Login`. */
@@ -64,7 +69,7 @@ export function ProjektAuswahl({
   const baum = useMemo(() => katalogBaumBauen(projekte), [projekte]);
   const zeilen = useMemo(() => filtereBaum(baum, suche, kunde), [baum, suche, kunde]);
   const sichtbar = zeilen.slice(0, AUSWAHL_MAX_TREFFER);
-  // Gezählt wird, was man wählen kann; inaktive Vorfahren sind nur Kontext.
+  // Gezählt wird, was man wählen kann und zum Ergebnis gehört; Vorfahren sind nur Kontext.
   const treffer = useMemo(
     () => zeilen.filter((z) => z.treffer && z.projekt.aktiv).length,
     [zeilen],
@@ -131,7 +136,7 @@ export function ProjektAuswahl({
               <span>{zeilenText(p)}</span>
             </label>
           ) : (
-            // Inaktiver Vorfahre: nur Kontext für die Kinder, nicht wählbar.
+            // Inaktiv mit Aktivem darunter: ausgegraut, nicht wählbar.
             <div
               key={p.id}
               style={einzug(tiefe)}

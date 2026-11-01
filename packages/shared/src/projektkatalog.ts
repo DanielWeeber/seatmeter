@@ -302,7 +302,7 @@ export const katalogSyncStandSchema = z.object({
   zuletzt_sync: z.string().nullable(),
   warnung_stunden: z.number().nullable(),
   deaktivieren_tage: z.number().nullable(),
-  /** Mehr Anteil der aktiven Projekte deaktiviert ein Lauf nicht auf einmal. */
+  /** Mehr Anteil der gesendeten Projekte geht über den Zeitraum der Bremse nicht verloren; mindestens ein Projekt darf. */
   deaktivieren_max_prozent: z.number(),
   /** Der letzte Lauf hätte zu viele Projekte deaktiviert und wurde angehalten. */
   bremse_aktiv: z.boolean(),

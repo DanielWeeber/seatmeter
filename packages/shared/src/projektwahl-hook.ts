@@ -46,6 +46,9 @@ export interface ProjektwahlHookOptionen {
  * Alles andere (lokale Pfade, Windows-Laufwerke) bleibt auf dem Rechner und zählt als Ordner ohne Repo; sonst bekäme
  * eine Wahl je Sitzung eine Marke je Repo. Nach dem Entfernen der Zugangsdaten darf kein `@` übrig sein (außer dem
  * Nutzer der scp-Form), sonst könnte ein Rest davon gesendet werden; das Schema hat mindestens zwei Zeichen (`C://…`).
+ * Der Hook prüft das, bevor er `?` und `#` abschneidet, und danach noch einmal: Abgeschnitten verschwände ein `@` hinter
+ * einem `?` im Passwort, und der Anfang des Passworts ginge durch. Den Nutzer der scp-Form ersetzt er durch `git`: Dort kann
+ * auch ein Token stehen, und für den Schlüssel des Repos zählt er nicht (`normalisiereRepoUrl` ignoriert ihn).
  */
 const REMOTE_MUSTER =
   '^([A-Za-z][A-Za-z0-9+.-]+://[^/@[:space:]]+/+[^/@[:space:]][^@[:space:]]*|([^@/:[:space:]]+@)?[^@:/[:space:]]{2,}:/?[^/@[:space:]][^@[:space:]]*)$';
@@ -68,7 +71,8 @@ export function projektwahlHookBefehl(o: ProjektwahlHookOptionen): string {
     token,
     `[ -n "$s" ] && [ -n "$t" ] || exit 0`,
     `case "$t" in *[!A-Za-z0-9_-]*) exit 0 ;; esac`,
-    `u=$(git remote get-url origin 2>/dev/null | head -n 1 | sed -E -e 's|^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@|\\1|' -e 's/[?#].*$//' | grep -E ${shEinfach(REMOTE_MUSTER)} | grep -Eiv '^file:')`,
+    `p=${shEinfach(REMOTE_MUSTER)}`,
+    `u=$(git remote get-url origin 2>/dev/null | head -n 1 | sed -E -e 's|^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@|\\1|' | grep -E "$p" | sed -E -e 's/[?#].*$//' -e 's|^[^@/:[:space:]]+@([^@:/[:space:]]+:)|git@\\1|' | grep -E "$p" | grep -Eiv '^file:')`,
     `h=$(printf %s "$t" | cksum | cut -d' ' -f1)`,
     `if [ -n "$u" ]; then k=r$h-$(printf %s "$u" | cksum | cut -d' ' -f1); else k=s$h-$s; fi`,
     `d=\${XDG_CACHE_HOME:-$HOME/.cache}/seatmeter`,

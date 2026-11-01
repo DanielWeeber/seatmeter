@@ -11,6 +11,7 @@ import {
   anmeldungSchema,
   einrichtungSchema,
   mandantWahlSchema,
+  nurEntwickler,
   type Einrichtung,
 } from '@seatmeter/shared';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
@@ -339,7 +340,8 @@ export const authPlugin: SeatmeterPlugin = {
       if (!eingabe.success) return reply.code(400).send({ fehler: 'ungültige Eingabe' });
       if (!a?.sitzungId) return reply.code(400).send({ fehler: 'nur mit Sitzung möglich' });
       const alle = await alleRollen(zustand, a.benutzerId);
-      if (!alle.some((r) => r.mandant_id === eingabe.data.mandant_id)) {
+      const rollen = alle.filter((r) => r.mandant_id === eingabe.data.mandant_id);
+      if (rollen.length === 0) {
         return reply.code(403).send({ fehler: 'keine Rolle in diesem Mandanten' });
       }
       await db
@@ -347,9 +349,12 @@ export const authPlugin: SeatmeterPlugin = {
         .set({ mandant_id: eingabe.data.mandant_id })
         .where('id', '=', a.sitzungId)
         .execute();
-      await withMandant(db, eingabe.data.mandant_id, (trx) =>
-        protokolliere(trx, { benutzerId: a.benutzerId, aktion: AUDIT_AKTION.mandantGewechselt }),
-      );
+      // Nur `entwickler`: kein Eintrag, wie bei der Anmeldung. Er ließe sich der Wahl davor oder danach zuordnen.
+      if (!nurEntwickler(rollen.map((r) => r.rolle))) {
+        await withMandant(db, eingabe.data.mandant_id, (trx) =>
+          protokolliere(trx, { benutzerId: a.benutzerId, aktion: AUDIT_AKTION.mandantGewechselt }),
+        );
+      }
       request.benutzer = null;
       const neu = await ermittleAnmeldung(request, reply);
       return neu ? meAntwort(zustand, neu) : reply.code(401).send({ fehler: 'nicht angemeldet' });

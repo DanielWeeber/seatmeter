@@ -1,4 +1,4 @@
-// Baum des Projektkatalogs: Reihenfolge, Robustheit gegen schlechte Daten, Filter mit Vorfahren und Laufzeit am Limit.
+// Baum des Projektkatalogs: Reihenfolge, Robustheit gegen schlechte Daten, Filter mit Vorfahren und Nachfahren, Laufzeit am Limit.
 import { describe, expect, it } from 'vitest';
 import {
   KATALOG_BAUM_MAX_TIEFE,
@@ -68,29 +68,142 @@ describe('Baum bauen', () => {
 });
 
 describe('Baum filtern', () => {
-  const baum = katalogBaumBauen([
-    p('W', null, 'Webshop'),
-    p('W-1', 'W', 'AP Login'),
-    p('W-1-1', 'W-1', 'Passwort'),
-    p('W-2', 'W', 'AP Bezahlen'),
-    p('X', null, 'Portal'),
-  ]);
+  const an = (k: KatalogBaumKnoten, aktiv = true) => ({ ...k, aktiv });
+  const baum = katalogBaumBauen(
+    [
+      p('W', null, 'Webshop'),
+      p('W-1', 'W', 'AP Login'),
+      p('W-1-1', 'W-1', 'Passwort'),
+      p('W-2', 'W', 'AP Bezahlen'),
+      p('X', null, 'Portal'),
+    ].map((k) => an(k)),
+  );
+  const zeilen = <T extends KatalogBaumKnoten>(
+    f: readonly { projekt: T; treffer: boolean }[],
+  ): [string, boolean][] => f.map((z) => [z.projekt.externe_id, z.treffer]);
 
   it('behält die Vorfahren eines Treffers als Kontext, Geschwister nicht', () => {
     const f = katalogBaumFiltern(baum, (x) => x.name === 'Passwort');
-    expect(f.map((z) => [z.projekt.externe_id, z.treffer])).toEqual([
+    expect(zeilen(f)).toEqual([
       ['W', false],
       ['W-1', false],
       ['W-1-1', true],
     ]);
   });
 
-  it('ein Treffer auf dem Elternprojekt bleibt Treffer, seine Kinder ohne Treffer bleiben weg', () => {
-    const f = katalogBaumFiltern(baum, (x) => x.name === 'Webshop' || x.name === 'Passwort');
-    expect(f.map((z) => [z.projekt.externe_id, z.treffer])).toEqual([
+  it('ein Treffer zeigt alle aktiven Nachfahren, auf jeder Ebene', () => {
+    const f = katalogBaumFiltern(baum, (x) => x.name === 'Webshop');
+    expect(zeilen(f)).toEqual([
       ['W', true],
-      ['W-1', false],
+      ['W-1', true],
       ['W-1-1', true],
+      ['W-2', true],
+    ]);
+    expect(zeilen(katalogBaumFiltern(baum, (x) => x.name === 'AP Login'))).toEqual([
+      ['W', false],
+      ['W-1', true],
+      ['W-1-1', true],
+    ]);
+  });
+
+  it('geschlossenes Elternprojekt mit offenem Kind: Suche nach dem Elternprojekt zeigt das Kind', () => {
+    const b = katalogBaumBauen([
+      an(p('E', null, 'Geschlossen'), false),
+      an(p('E-1', 'E', 'Offen')),
+      an(p('E-2', 'E', 'Auch zu'), false),
+    ]);
+    expect(zeilen(katalogBaumFiltern(b, (x) => x.name === 'Geschlossen'))).toEqual([
+      ['E', true],
+      ['E-1', true],
+    ]);
+    // Standardansicht: ausgegraut dabei, das geschlossene Kind ohne Aktives darunter nicht.
+    expect(zeilen(katalogBaumFiltern(b, () => true))).toEqual([
+      ['E', true],
+      ['E-1', true],
+    ]);
+  });
+
+  it('geschlossenes Elternprojekt nur mit geschlossenen Kindern: nirgends, auch nicht in der Suche', () => {
+    const b = katalogBaumBauen([
+      an(p('E', null, 'Geschlossen'), false),
+      an(p('E-1', 'E', 'Zu'), false),
+      an(p('E-1-1', 'E-1', 'Auch zu'), false),
+      an(p('O', null, 'Offen')),
+    ]);
+    expect(zeilen(katalogBaumFiltern(b, () => true))).toEqual([['O', true]]);
+    expect(katalogBaumFiltern(b, (x) => x.name === 'Geschlossen')).toEqual([]);
+    expect(katalogBaumFiltern(b, (x) => x.name === 'Auch zu')).toEqual([]);
+  });
+
+  it('mehrere Ebenen: inaktive Zwischenebene bleibt nur auf dem Weg zu Aktivem', () => {
+    const b = katalogBaumBauen([
+      an(p('A', null, 'Oben'), false),
+      an(p('A-1', 'A', 'Mitte zu, führt weiter'), false),
+      an(p('A-1-1', 'A-1', 'Unten offen')),
+      an(p('A-2', 'A', 'Mitte zu, Sackgasse'), false),
+      an(p('A-2-1', 'A-2', 'Unten zu'), false),
+      an(p('A-3', 'A', 'Mitte offen')),
+      an(p('A-3-1', 'A-3', 'Unten zu unter offen'), false),
+    ]);
+    expect(zeilen(katalogBaumFiltern(b, (x) => x.name === 'Oben'))).toEqual([
+      ['A', true],
+      ['A-1', true],
+      ['A-1-1', true],
+      ['A-3', true],
+    ]);
+    expect(zeilen(katalogBaumFiltern(b, (x) => x.name === 'Unten offen'))).toEqual([
+      ['A', false],
+      ['A-1', false],
+      ['A-1-1', true],
+    ]);
+    expect(katalogBaumFiltern(b, (x) => x.name === 'Unten zu')).toEqual([]);
+  });
+
+  it('nie gesendete Eltern: Das Kind bleibt Wurzel, auch im Filter', () => {
+    const b = katalogBaumBauen([
+      an(p('K', 'nie-gesendet', 'Kind')),
+      an(p('L', 'nie-gesendet', 'Anderes Kind'), false),
+    ]);
+    expect(b.map((z) => z.tiefe)).toEqual([0, 0]);
+    expect(zeilen(katalogBaumFiltern(b, () => true))).toEqual([['K', true]]);
+  });
+
+  it('Wurzeln nach Name, Geschwister stabil nach Nummer; jede Eingabereihenfolge ergibt dasselbe', () => {
+    const liste = [
+      an(p('3', null, 'Zentrale')),
+      an(p('20', null, 'Archiv')),
+      an(p('1', null, 'mitte')),
+      an(p('1-10', '1', 'A')),
+      an(p('1-9', '1', 'Z')),
+      an(p('1-2', '1', 'M')),
+    ];
+    const ids = (l: typeof liste) =>
+      katalogBaumFiltern(katalogBaumBauen(l), () => true).map((z) => z.projekt.externe_id);
+    const erwartet = ['20', '1', '1-2', '1-9', '1-10', '3'];
+    expect(ids(liste)).toEqual(erwartet);
+    expect(ids([...liste].reverse())).toEqual(erwartet);
+    expect(
+      katalogBaumFiltern(katalogBaumBauen(liste), (x) => x.name === 'mitte').map(
+        (z) => z.projekt.externe_id,
+      ),
+    ).toEqual(['1', '1-2', '1-9', '1-10']);
+  });
+
+  it('erbt: Ein abgelehnter Nachfahre gibt nichts weiter, die Kette bleibt zusammenhängend', () => {
+    const b = katalogBaumBauen([
+      an(p('A', null, 'Treffer')),
+      an(p('A-1', 'A', 'Abgelehnt')),
+      an(p('A-1-1', 'A-1', 'Darunter')),
+      an(p('A-2', 'A', 'Erlaubt')),
+    ]);
+    const f = katalogBaumFiltern(
+      b,
+      (x) => x.name === 'Treffer',
+      (x) => x.name !== 'Abgelehnt',
+    );
+    expect(zeilen(f)).toEqual([
+      ['A', true],
+      ['A-2', true],
     ]);
   });
 
@@ -120,7 +233,7 @@ describe('Baum filtern', () => {
 
 describe('Laufzeit am Limit von 20 000 Projekten', () => {
   it('bleibt deutlich unter einer Sekunde', () => {
-    const liste: (KatalogBaumKnoten & { kunde: string })[] = [];
+    const liste: (KatalogBaumKnoten & { kunde: string; aktiv: boolean })[] = [];
     for (let i = 0; i < 20_000; i++) {
       const stufe = i % 4;
       liste.push({
@@ -129,6 +242,7 @@ describe('Laufzeit am Limit von 20 000 Projekten', () => {
         nummer: `P-${i}`,
         name: `Projekt ${i} mit etwas längerem Namen`,
         kunde: `Kunde ${i % 50}`,
+        aktiv: true,
       });
     }
     const a = performance.now();
@@ -145,5 +259,33 @@ describe('Laufzeit am Limit von 20 000 Projekten', () => {
     expect(f.some((z) => z.treffer)).toBe(true);
     expect(b - a).toBeLessThan(1000);
     expect(c - b).toBeLessThan(200);
+  });
+
+  it('10 000 Einträge, drei Viertel inaktiv: Bauen und Filtern bleiben klein', () => {
+    const liste: (KatalogBaumKnoten & { aktiv: boolean })[] = [];
+    for (let i = 0; i < 10_000; i++) {
+      liste.push({
+        externe_id: `id-${i}`,
+        parent_externe_id: i % 4 === 0 ? `nie-${i}` : `id-${i - (i % 4)}`,
+        nummer: `P-${i}`,
+        name: `Projekt ${i} mit etwas längerem Namen`,
+        aktiv: i % 4 === 3,
+      });
+    }
+    const a = performance.now();
+    const baum = katalogBaumBauen(liste);
+    const b = performance.now();
+    const alle = katalogBaumFiltern(baum, () => true);
+    const c = performance.now();
+    const suche = katalogBaumFiltern(baum, (x) => x.name.includes('Projekt 99'));
+    const d = performance.now();
+    console.log(
+      `Baum 10000 (75 % inaktiv): bauen ${(b - a).toFixed(1)} ms, filtern ${(c - b).toFixed(1)} ms, ` +
+        `suchen ${(d - c).toFixed(1)} ms, Zeilen ${alle.length}, Treffer Suche ${suche.length}`,
+    );
+    // Wurzel plus aktives Kind je Gruppe; die zwei inaktiven Geschwister bleiben weg.
+    expect(alle).toHaveLength(5_000);
+    expect(c - b).toBeLessThan(200);
+    expect(d - c).toBeLessThan(200);
   });
 });

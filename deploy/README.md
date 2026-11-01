@@ -113,7 +113,7 @@ Hinter dem Proxy `SEATMETER_TRUST_PROXY=1` setzen, sonst sieht der Server alle C
 
 Ein eigener öffentlicher Ingest-Host (z. B. `ingest.example.org`) gibt nur `/otlp/*`, `/api/ingest/*`, `/api/agent/*`, `/api/health` und die drei Katalog-Routen aus der Tabelle weiter, sonst sendet ein Quellsystem dort ins Leere, und antwortet sonst mit 404; das Dashboard bleibt intern oder hinter einer öffentlichen Anmeldung.
 
-**nginx:** Für die seatmeter-vhosts `proxy_intercept_errors off` setzen: Sonst ersetzt nginx die Fehlerkörper der API durch seine eigenen Seiten und verliert dabei `Retry-After`. `proxy_pass` ohne URI-Teil schreiben, also `proxy_pass http://seatmeter;`, nicht `proxy_pass http://seatmeter/api/;`: Mit URI-Teil normalisiert nginx den Pfad und dekodiert `%2F`, aus der externen ID `P%2F100` würde der Pfad `P/100`, und die Route passt nicht mehr. Geprüft mit nginx 1.30; `client_max_body_size` mindestens auf 20m stellen.
+**nginx:** Für die seatmeter-vhosts `proxy_intercept_errors off` setzen: Sonst ersetzt nginx die Fehlerkörper der API durch seine eigenen Seiten und verliert dabei `Retry-After`. `proxy_pass` ohne URI-Teil schreiben, also `proxy_pass http://seatmeter;`, nicht `proxy_pass http://seatmeter/api/;`: Mit URI-Teil normalisiert nginx den Pfad und dekodiert `%2F`, aus der externen ID `P%2F100` würde der Pfad `P/100`, und die Route passt nicht mehr. Die `Remote-*`-Kopfzeilen leeren wie im Caddy-Beispiel: Sonst könnte ein Client sie mitschicken und sich im Header-Modus als jemand anderes ausgeben. nginx sendet einen leer gesetzten Header gar nicht. Geprüft mit nginx 1.30; `client_max_body_size` mindestens auf 20m stellen.
 
 ```nginx
 location / {
@@ -122,6 +122,10 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Remote-User "";
+    proxy_set_header Remote-Groups "";
+    proxy_set_header Remote-Email "";
+    proxy_set_header Remote-Name "";
 }
 ```
 
@@ -201,6 +205,7 @@ Der Server begrenzt die Ingest-Pfade selbst (Token-Buckets im Speicher, eine Ins
 - Je Mandant: `PUT /api/v1/mandant/einstellungen` mit `{ "ratenlimit_otlp": 6000 }` bzw. `{ "ratenlimit_agent": 600 }` (Anfragen pro Minute, 10–1.000.000; `null` = Standard); der Stoß wächst im Verhältnis des Standards. Wirkt spätestens nach 60 s, steht im Audit.
 - Beobachten: `/api/health/ingest` → `quellen.<a|b>.abgelehnt_429_24h` und `ratenlimit.abgelehnt_429_24h_je_art` (`ip`, `fehlversuch`, `token`, `rechner`, `enroll`, `enroll_fehlversuch`), gezählt im Speicher ab Serverstart (`ratenlimit.seit`). Das Log meldet je Schlüsselart höchstens einmal je Minute „Ratenlimit greift“ mit Art, Quelle und Wartezeit, nie Token, Hash oder IP.
 - Die Client-IP stimmt nur mit `SEATMETER_TRUST_PROXY` (siehe Reverse-Proxy); ohne teilen sich alle Clients hinter dem Proxy einen Eimer je IP.
+- **Projektkatalog:** `PUT /api/v1/projektkatalog/projekte/*`, `POST /api/v1/projektkatalog/import/datei` und `GET /api/v1/projektkatalog/sync-status` sind keine Ingest-Pfade: Keine dieser Variablen gilt dort. Push und Status sind für gültige Tokens nicht begrenzt, der Upload hat fest 10 Dateien je Minute und Token (Stoß 30). Fehlversuche sind fest begrenzt (je Client-IP in 15 Minuten 30 am Push und Status, 20 am Upload), und das trifft nie ein gültiges Token. Ein Quellsystem sendet je Lauf tausende Anfragen nacheinander und bricht bei 429 ab: Eine Begrenzung im Proxy (nginx `limit_req`, Caddy-Module, WAF) muss diese Routen ausnehmen.
 
 ## Jobs
 
@@ -215,7 +220,7 @@ Der Server plant seine Jobs selbst (Cron in UTC, Advisory-Lock, Protokoll in `jo
 | `kalkulation.monatsabschluss` | am 1. um 03:30 | Vormonat je Mandant einfrieren (vorhandene Abschlüsse bleiben) |
 | `aufbewahrung.loeschen` | täglich 02:45 | Löschläufe laut Fristen, protokolliert in `loeschlauf` |
 | `budgets.pruefen` | stündlich, Minute 7 | Budgets gegen Schwellen prüfen, je Schwelle ein Alarm, Zustellung über die Alarmkanäle |
-| `projektkatalog.sync` | stündlich, Minute 25 | Alarm, wenn die Synchronisation des Projektkatalogs ausbleibt, optional nicht mehr gesendete Projekte deaktivieren (mit Bremse), je Tag und Token eine Audit-Zeile. Scheitert ein Mandant, laufen die anderen weiter und der Lauf endet mit Fehler in `job_lauf` |
+| `projektkatalog.sync` | stündlich, Minute 25 | Alarm, wenn die Synchronisation des Projektkatalogs ausbleibt, optional nicht mehr gesendete Projekte deaktivieren (Genauigkeit ein Tag, mit Bremse über einen Zeitraum), je Tag und Token eine Audit-Zeile. Scheitert ein Mandant, laufen die anderen weiter und der Lauf endet mit Fehler in `job_lauf` |
 | `hinweise.erzeugen` | täglich 04:30 | Projekt-Hinweise des laufenden Monats |
 | `abgleich.analytics` | täglich 05:00 | Analytics API (nur Mandanten mit Key): letzte 8 UTC-Tage → `ueberschreitung`, `abgleich_lauf`; braucht ausgehendes HTTPS zu `api.anthropic.com` |
 

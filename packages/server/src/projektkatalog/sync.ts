@@ -33,6 +33,13 @@ export type PushErgebnis = 'neu' | 'aktualisiert' | 'unveraendert';
 const LEEREN_NACH_MS = 15_000;
 const STUNDE_MS = 3_600_000;
 const TAG_MS = 24 * STUNDE_MS;
+/**
+ * So grob ist `zuletzt_gesehen`: Ein unveränderter Push schreibt die Zeile nur, wenn der Wert mindestens so alt ist. Ein
+ * Lauf je Stunde kostet so keine 240 000 Zeilenänderungen am Tag.
+ */
+export const GESEHEN_AUFLOESUNG_MS = TAG_MS;
+/** Längere Lücke zwischen zwei Pushes gilt als Ausfall. Eine Quelle mit einem Lauf je Tag bleibt darunter. */
+const PUSH_LUECKE_STUNDEN = 25;
 /** So lange bleiben Tageszähler stehen. */
 const ZAEHLER_TAGE = 90;
 /** SQLSTATE: Der Mandant ist inzwischen gelöscht. */
@@ -193,7 +200,7 @@ export async function syncZeitSetzen(
     .values({
       mandant_id: mandantId,
       zuletzt_sync: zeit,
-      ...(o.push ? { zuletzt_push: zeit } : {}),
+      ...(o.push ? { zuletzt_push: zeit, push_aktiv_ab: zeit } : {}),
     })
     .onConflict((oc) =>
       oc.column('mandant_id').doUpdateSet({
@@ -201,6 +208,12 @@ export async function syncZeitSetzen(
         ...(o.push
           ? {
               zuletzt_push: sql<Date>`greatest(mandant_projektkatalog.zuletzt_push, excluded.zuletzt_push)`,
+              // Nach einem Ausfall beginnt die Zählung neu.
+              push_aktiv_ab: sql<Date>`CASE
+                WHEN mandant_projektkatalog.push_aktiv_ab IS NULL
+                  OR excluded.zuletzt_push - mandant_projektkatalog.zuletzt_push > make_interval(hours => ${PUSH_LUECKE_STUNDEN})
+                THEN excluded.push_aktiv_ab
+                ELSE mandant_projektkatalog.push_aktiv_ab END`,
             }
           : {}),
       }),
@@ -263,6 +276,7 @@ interface Einstellung {
   sync_deaktivieren_tage: number | null;
   sync_deaktivieren_max_prozent: number;
   sync_bremse_seit: Date | null;
+  sync_fenster_ab: Date | null;
 }
 
 const warnungAus = (e: Pick<Einstellung, 'sync_warnung_stunden'> | undefined) =>
@@ -334,7 +348,7 @@ export interface SyncJobErgebnis {
   alarme: number;
   zustellfehler: number;
   deaktiviert: number;
-  /** Quelle ist still: Deaktivieren bewusst übersprungen. */
+  /** Quelle ist still oder sendet noch nicht lange genug wieder: Deaktivieren bewusst übersprungen. */
   uebersprungen: number;
   /** Lauf hätte zu viele Projekte deaktiviert und hat angehalten. */
   gebremst: number;
@@ -376,26 +390,48 @@ function alarmNachricht(
   };
 }
 
+interface Bremse {
+  /** So viele träfe dieser Lauf. */
+  kandidaten: number;
+  /** Mit den schon im Zeitraum deaktivierten zusammen. */
+  gesamt: number;
+  /** Aktive gesendete Projekte plus die im Zeitraum deaktivierten: der Stand zu Beginn des Zeitraums. */
+  basis: number;
+  erlaubt: number;
+  prozent: number;
+  zuletztPush: Date;
+}
+
 function bremsNachricht(
   mandantId: string,
-  kandidaten: number,
-  aktive: number,
-  prozent: number,
-  zuletztPush: Date,
+  b: Bremse,
   oeffentlich: string | undefined,
 ): AlarmNachricht {
   return {
-    schluessel: `seatmeter|katalog-bremse|${mandantId}|${zuletztPush.toISOString()}`,
+    schluessel: `seatmeter|katalog-bremse|${mandantId}|${b.zuletztPush.toISOString()}`,
     ereignis: 'seatmeter.katalog_bremse',
     titel: 'Projektkatalog: Deaktivieren angehalten',
     zeilen: [
-      `Der Lauf hätte ${kandidaten} von ${aktive} aktiven Projekten deaktiviert`,
-      `Grenze: ${prozent} %`,
+      `Der Lauf hätte ${b.kandidaten} Projekte deaktiviert, im Zeitraum zusammen ${b.gesamt} von ${b.basis} gesendeten`,
+      `Erlaubt: ${b.erlaubt} (${b.prozent} %)`,
       'Vermutlich ist der Lauf im Quellsystem abgebrochen, bitte prüfen',
     ],
     link: alarmLink(oeffentlich),
-    daten: { anzahl: kandidaten, aktiv: aktive, grenze_prozent: prozent },
+    daten: {
+      anzahl: b.kandidaten,
+      gesamt: b.gesamt,
+      basis: b.basis,
+      erlaubt: b.erlaubt,
+      grenze_prozent: b.prozent,
+    },
   };
+}
+
+/** Fehlerklasse und SQLSTATE: genug zum Einordnen. Der Text bleibt draußen, er kann Werte des Mandanten enthalten. */
+export function fehlerArt(fehler: unknown): string {
+  const klasse = fehler instanceof Error ? fehler.name : typeof fehler;
+  const code = (fehler as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? `${klasse} ${code}` : klasse;
 }
 
 export async function syncJob(
@@ -426,9 +462,9 @@ export async function syncJob(
     // Ein Mandant darf die anderen nicht aufhalten. Am Ende wirft der Job, damit `job_lauf` den Fehler zeigt.
     try {
       await mandantPruefen(ctx, id, jetzt, heute, summe, o);
-    } catch {
+    } catch (fehler) {
       summe.fehlgeschlagen += 1;
-      fehlgeschlagen.push(id);
+      fehlgeschlagen.push(`${id} (${fehlerArt(fehler)})`);
     }
   }
   if (fehlgeschlagen.length > 0) {
@@ -466,24 +502,21 @@ async function mandantPruefen(
       await trx.updateTable('mandant_projektkatalog').set({ sync_alarm_seit: null }).execute();
     }
 
-    const bremse = await veralteteDeaktivieren(trx, e, jetzt, summe);
-    if (bremse) {
+    const pruefung = await veralteteDeaktivieren(trx, e, jetzt, summe);
+    if (pruefung !== 'frei' && pruefung !== 'still') {
+      const bremse = pruefung;
       summe.gebremst += 1;
       if (!e?.sync_bremse_seit) {
         offen.push({
-          nachricht: bremsNachricht(
-            id,
-            bremse.kandidaten,
-            bremse.aktive,
-            bremse.prozent,
-            bremse.zuletztPush,
-            oeffentlich,
-          ),
+          nachricht: bremsNachricht(id, bremse, oeffentlich),
           merker: 'sync_bremse_seit',
-          audit: `anzahl:${bremse.kandidaten} aktiv:${bremse.aktive} grenze:${bremse.prozent}%`,
+          audit:
+            `anzahl:${bremse.kandidaten} gesamt:${bremse.gesamt} basis:${bremse.basis} ` +
+            `erlaubt:${bremse.erlaubt} grenze:${bremse.prozent}%`,
         });
       }
-    } else if (e?.sync_bremse_seit) {
+    } else if (pruefung === 'frei' && e?.sync_bremse_seit) {
+      // Nur nach einer echten Prüfung: Eine stille Quelle sagt nichts darüber, ob der Grund für den Halt weg ist.
       await trx.updateTable('mandant_projektkatalog').set({ sync_bremse_seit: null }).execute();
     }
 
@@ -533,37 +566,63 @@ async function mandantPruefen(
 /**
  * Optional: Projekte, die das Quellsystem nicht mehr sendet, werden inaktiv. Nur per Push angelegte oder gesendete
  * (`quelle = 'api'`). Das Alter zählt gegen den letzten Push, nicht gegen die Uhr: Verstummt die Quelle, altert nichts.
- * Zusätzlich drei Riegel: Quelle still (älter als die Warnfrist), Tage nicht eingestellt, und die Bremse, wenn ein Lauf
- * mehr als den eingestellten Anteil der aktiven Projekte träfe. Dann war der Lauf der Quelle vermutlich abgebrochen.
+ * Zusätzlich die Riegel: Quelle still (älter als die Warnfrist), Tage nicht eingestellt, und die Bremse: Sie zählt über
+ * einen Zeitraum (die eingestellten Tage plus die Auflösung) alles wegen Alters Deaktivierte plus diesen Lauf, gegen den
+ * Stand zu Beginn des Zeitraums. So kommt kein Schwund in kleinen Scheiben durch. CSV-Zeilen altern nicht und zählen nicht
+ * mit, ein zurückgekehrtes Projekt auch nicht. Dazu ein vierter Riegel: Nach einer Lücke von über 25 h wartet das Altern,
+ * bis die Quelle wieder so lange sendet, wie die Tage sagen (`push_aktiv_ab`). Ergebnis: `still` = nicht geprüft, `frei` = geprüft und nichts spricht
+ * dagegen (auch wenn das Deaktivieren aus ist, dann gibt es keinen Halt mehr), sonst die Bremse.
  */
 async function veralteteDeaktivieren(
   trx: KatalogTrx,
-  e: (Einstellung & { zuletzt_push: Date | null }) | undefined,
+  e: (Einstellung & { zuletzt_push: Date | null; push_aktiv_ab: Date | null }) | undefined,
   jetzt: Date,
   summe: SyncJobErgebnis,
-): Promise<{ kandidaten: number; aktive: number; prozent: number; zuletztPush: Date } | null> {
+): Promise<Bremse | 'frei' | 'still'> {
   const tage = e?.sync_deaktivieren_tage ?? null;
-  if (tage === null) return null;
+  if (tage === null) return 'frei';
   const frist = (e?.sync_warnung_stunden ?? KATALOG_SYNC_WARNUNG_STUNDEN) * STUNDE_MS;
   const zuletztPush = e?.zuletzt_push ? new Date(e.zuletzt_push) : null;
   if (zuletztPush === null || jetzt.getTime() - zuletztPush.getTime() > frist) {
     summe.uebersprungen += 1;
-    return null;
+    return 'still';
   }
-  const grenze = new Date(zuletztPush.getTime() - tage * TAG_MS);
-  const zahlen = await sql<{ kandidaten: number; aktive: number }>`
+  // Ein Ausfall darf nicht als Alter zählen: Nach dem Neubeginn sähe jedes Projekt, das ein abgebrochener erster Lauf nicht
+  // erreicht, um die ganze Lücke alt aus. Erst wenn die Quelle wieder so lange ohne Lücke sendet, wie die Tage sagen.
+  const pushAktivAb = e?.push_aktiv_ab ? new Date(e.push_aktiv_ab).getTime() : null;
+  if (pushAktivAb === null || jetzt.getTime() - pushAktivAb < tage * TAG_MS) {
+    summe.uebersprungen += 1;
+    return 'still';
+  }
+  // Plus die Auflösung von `zuletzt_gesehen`: Ein Projekt, das jeder Lauf sendet, darf bis dahin alt aussehen. So wird ein
+  // nicht mehr gesendetes Projekt nach den eingestellten Tagen bis einem Tag mehr inaktiv, nie früher.
+  const spanne = tage * TAG_MS + GESEHEN_AUFLOESUNG_MS;
+  const grenze = new Date(zuletztPush.getTime() - spanne);
+  const fensterAb = new Date(
+    Math.max(
+      jetzt.getTime() - spanne,
+      e?.sync_fenster_ab ? new Date(e.sync_fenster_ab).getTime() : 0,
+    ),
+  );
+  const zahlen = await sql<{ kandidaten: number; aktive: number; im_fenster: number }>`
     SELECT
-      (count(*) FILTER (WHERE quelle = 'api' AND zuletzt_gesehen < ${grenze}))::int AS kandidaten,
-      count(*)::int AS aktive
-    FROM katalog_projekt WHERE aktiv`.execute(trx);
+      (count(*) FILTER (WHERE aktiv AND zuletzt_gesehen < ${grenze}))::int AS kandidaten,
+      (count(*) FILTER (WHERE aktiv))::int AS aktive,
+      (count(*) FILTER (WHERE NOT aktiv AND veraltet_seit >= ${fensterAb}))::int AS im_fenster
+    FROM katalog_projekt WHERE quelle = 'api'`.execute(trx);
   const kandidaten = Number(zahlen.rows[0]?.kandidaten ?? 0);
-  const aktive = Number(zahlen.rows[0]?.aktive ?? 0);
-  if (kandidaten === 0) return null;
+  if (kandidaten === 0) return 'frei';
+  const imFenster = Number(zahlen.rows[0]?.im_fenster ?? 0);
+  const basis = Number(zahlen.rows[0]?.aktive ?? 0) + imFenster;
   const prozent = e?.sync_deaktivieren_max_prozent ?? KATALOG_DEAKTIVIEREN_MAX_PROZENT;
-  if (kandidaten * 100 > prozent * aktive) return { kandidaten, aktive, prozent, zuletztPush };
+  // Mindestens eins: Sonst käme ein kleiner Katalog nie an einem entfallenen Projekt vorbei. Leer werden kann er dadurch
+  // nicht, ein gerade gesendetes Projekt ist nie veraltet.
+  const erlaubt = Math.max(1, Math.floor((prozent * basis) / 100));
+  const gesamt = imFenster + kandidaten;
+  if (gesamt > erlaubt) return { kandidaten, gesamt, basis, erlaubt, prozent, zuletztPush };
   const r = await trx
     .updateTable('katalog_projekt')
-    .set({ aktiv: false })
+    .set({ aktiv: false, veraltet_seit: jetzt })
     .where('aktiv', '=', true)
     .where('quelle', '=', 'api')
     .where('zuletzt_gesehen', '<', grenze)
@@ -577,7 +636,7 @@ async function veralteteDeaktivieren(
       objekt: `anzahl:${n} tage:${tage}`,
     });
   }
-  return null;
+  return 'frei';
 }
 
 /** Je abgeschlossenem Tag und Token eine Zeile, nie je Anfrage und nie mit dem Token selbst. */

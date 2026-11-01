@@ -45,14 +45,16 @@ export const TEXT_SPALTEN =
   'Spaltennamen wie ID, Nummer, Name, Kunde, Parent und Status.';
 
 export const TEXT_BREMSE =
-  'Der letzte Lauf hätte zu viele Projekte deaktiviert und hat angehalten. Vermutlich ist der Lauf im Quellsystem ' +
-  'abgebrochen. Bitte prüfen; nach einem vollständigen Lauf löst sich das von selbst.';
+  'Der letzte Lauf hätte zu viele Projekte deaktiviert und hat angehalten. War der Lauf im Quellsystem abgebrochen, ' +
+  'kommen die Projekte mit dem nächsten vollständigen Lauf zurück, und das löst sich. Sind sie wirklich entfallen, ' +
+  'bleibt es stehen: Dann die Grenze einmal erhöhen, den nächsten stündlichen Durchgang abwarten und sie zurückstellen.';
 
 export const TEXT_SYNC_VERALTET =
   'Die Synchronisation mit dem Quellsystem bleibt aus. Bitte den Lauf dort prüfen. Neue Projekte fehlen sonst in der Auswahl.';
 
 export const TEXT_DEAKTIVIERUNG_UEBERSPRUNGEN =
-  'Mindestens eine abgelehnte Zeile ließ sich keinem Projekt zuordnen. Darum wurde in diesem Lauf nichts deaktiviert.';
+  'Mindestens eine Zeile ließ sich nicht sicher einem Projekt zuordnen oder hat womöglich andere Zeilen verschluckt. ' +
+  'Darum wurde in diesem Lauf nichts deaktiviert.';
 
 export const TEXT_STUFEN =
   'Ein verwalteter Hook prüft in Repos ohne Projekt vor dem Prompt. Erst „Warnen“, später „Blockieren“: Beim Warnen ' +
@@ -396,7 +398,7 @@ function Synchronisation({ e }: { e: KatalogEinstellung }) {
           onAendern={setTage}
         />
         <Eingabe
-          beschriftung="Höchstens so viel Prozent der aktiven Projekte je Lauf deaktivieren"
+          beschriftung="Höchstens so viel Prozent der aktiven gesendeten Projekte deaktivieren"
           wert={prozent}
           onAendern={setProzent}
         />

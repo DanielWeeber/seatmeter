@@ -181,12 +181,38 @@ describe('CSV lesen', () => {
 
   it('Mehrzeiliger Text in einer Spalte, die nicht zählt: erlaubt; mit Trennzeichen darin verdächtig', () => {
     const frei = leseKatalogCsv(
-      'Nummer;Name;Beschreibung\nP-1;Eins;"Erste Zeile; mit Trenner\nZweite Zeile"\nP-2;Zwei;x\n',
+      'Nummer;Name;Beschreibung\nP-1;Eins;"Erste Zeile\nZweite Zeile"\nP-2;Zwei;"Eine Zeile; mit Trenner"\n',
     );
     expect(frei.abgelehnt).toBe(0);
     expect(frei.nummerUnlesbar).toBe(false);
     expect(frei.hinweise).toEqual([]);
     expect(frei.eintraege.map((e) => e.nummer)).toEqual(['P-1', 'P-2']);
+
+    // Das Trennzeichen in der ersten Zeile zählt genauso: Hier steckt P-1 im Feld davor.
+    const ersteZeile = leseKatalogCsv('Beschreibung;Nummer;Name\n"foo;P-1;A\nbar";P-2;B\n');
+    expect(ersteZeile.abgelehnt).toBe(0);
+    expect(ersteZeile.nummerUnlesbar).toBe(true);
+    expect(ersteZeile.eintraege.map((e) => e.nummer)).toEqual(['P-2']);
+    expect(ersteZeile.hinweise).toHaveLength(1);
+    // Eine Beschreibung mit weniger Trennzeichen, als eine CSV-Zeile bräuchte, ist in Ordnung.
+    for (const csv of [
+      'Nummer;Name;Notiz\nP1;A;"Teil 1; Teil 2\nTeil 3"\nP2;B;x\n',
+      'Nummer;Name;Notiz;Mehr\nP1;A;"Teil 1; Teil 2; Teil 3\nTeil 4";y\nP2;B;x;y\n',
+    ]) {
+      const ok = leseKatalogCsv(csv);
+      expect(ok.nummerUnlesbar, csv).toBe(false);
+      expect(ok.hinweise, csv).toEqual([]);
+      expect(
+        ok.eintraege.map((e) => e.externe_id),
+        csv,
+      ).toEqual(['P1', 'P2']);
+    }
+    // Sieht eine Beschreibung aber wie eine CSV-Zeile aus, überspringt auch sie das Deaktivieren, mit Hinweis.
+    const echt = leseKatalogCsv(
+      'Nummer;Name;Beschreibung\nP-1;Eins;"Teil 1; Teil 2; Teil 3\nTeil 4"\n',
+    );
+    expect(echt.nummerUnlesbar).toBe(true);
+    expect(echt.hinweise[0]).toContain('Zeile 2');
 
     const verdaechtig = leseKatalogCsv(
       'Nummer;Name;Beschreibung\nP-1;Eins;"5 Monitor\nP-2;Zwei;GEHEIM\nP-3;Drei;7"\nP-4;Vier;d\n',
@@ -197,6 +223,18 @@ describe('CSV lesen', () => {
     expect(verdaechtig.hinweise).toHaveLength(1);
     expect(verdaechtig.hinweise[0]).toContain('Zeile 2');
     expect(verdaechtig.hinweise[0]).not.toContain('GEHEIM');
+  });
+
+  it('Zeilenumbruch in der Kopfzeile: ganze Datei abgelehnt, auch mit Spaltenzuordnung', () => {
+    const csv = 'Nummer;Name;"Notiz\nP1;A;x\nP2;B;y\nP3;C;Monitor 5"\nP4;D;z\nP5;E;w\n';
+    expect(() => leseKatalogCsv(csv)).toThrow(/Kopfzeile enthält einen Zeilenumbruch/);
+    expect(() => leseKatalogCsv(csv, { spalten: { id: 'Nummer', name: 'Name' } })).toThrow(
+      QuelleFehler,
+    );
+    // Mitten im Namen einer Spalte ebenso, CRLF auch.
+    expect(() => leseKatalogCsv('"Num\r\nmer";Name\nP1;A\n')).toThrow(/Zeilenumbruch/);
+    // Ohne Umbruch bleibt ein Anführungszeichen in der Kopfzeile erlaubt.
+    expect(leseKatalogCsv('"Nummer";"Name"\nP1;A\n').eintraege).toHaveLength(1);
   });
 
   it('Trennzeichen: Standard Semikolon, nie geraten', () => {
@@ -504,6 +542,14 @@ describe('Abgleich', () => {
     const aktiv = async () => (await projekte(u, true)).map((p) => p.nummer).sort();
     const alle = ['P-1', 'P-2', 'P-3', 'P-4'];
 
+    // In der Kopfzeile: P-1 bis P-3 steckten im Spaltennamen, die Datei wird abgelehnt und nichts ändert sich.
+    const kopf = await hochladen(
+      token,
+      'Nummer;Name;"Notiz\nP-1;Eins;x\nP-2;Zwei;y\nP-3;Drei;Monitor 5"\nP-4;Vier;z\n',
+    );
+    expect(kopf.statusCode, kopf.body).toBe(400);
+    expect(await aktiv()).toEqual(alle);
+
     // In einer Spalte, die nicht zählt: Das Zeichen ist wörtlich, alle Zeilen kommen an.
     const woertlich = await ergebnis(
       token,
@@ -539,6 +585,39 @@ describe('Abgleich', () => {
       deaktivierung_uebersprungen: true,
     });
     expect(verschluckt.hinweise).toHaveLength(1);
+    expect(await aktiv()).toEqual(alle);
+
+    // Doppelte Zeile, die etwas verschluckt: P-2 steckt im Namen des zweiten P-1. Sie wird abgelehnt, und nichts wird
+    // deaktiviert, auch wenn die erste Zeile von P-1 gültig war.
+    const doppelt = await ergebnis(
+      token,
+      'Nummer;Name\nP-1;Eins\nP-1;"Noch mal\nP-2;Zwei"\nP-3;Drei\nP-4;Vier\n',
+    );
+    expect(doppelt).toMatchObject({
+      abgelehnt: 1,
+      deaktiviert: 0,
+      deaktivierung_uebersprungen: true,
+    });
+    expect(await aktiv()).toEqual(alle);
+
+    // Die erste Zeile einer ID entscheidet weiter, auch wenn der Umbruch in ihr steckt.
+    const zuerst = leseKatalogCsv('Nummer;Name\nP-1;"Eins\nx"\nP-1;Zwei\n');
+    expect(zuerst.abgelehnt).toBe(2);
+    expect(zuerst.eintraege).toEqual([]);
+
+    // Eine Notiz mit einem Trennzeichen, in drei Spalten: Sie sieht nicht wie eine Zeile aus, P-2 fehlt wirklich.
+    const notiz = await ergebnis(
+      token,
+      'Nummer;Name;Info\nP-1;Eins;"Teil 1; Teil 2\nTeil 3"\nP-3;Drei;x\nP-4;Vier;y\n',
+    );
+    expect(notiz).toMatchObject({
+      abgelehnt: 0,
+      deaktiviert: 1,
+      deaktivierung_uebersprungen: false,
+    });
+    expect(notiz.hinweise).toEqual([]);
+    expect(await aktiv()).toEqual(['P-1', 'P-3', 'P-4']);
+    await ergebnis(token, 'Nummer;Name\nP-1;Eins\nP-2;Zwei\nP-3;Drei\nP-4;Vier\n');
     expect(await aktiv()).toEqual(alle);
 
     // Ohne Trennzeichen im Text fehlt P-2 wirklich: Dann wird deaktiviert.

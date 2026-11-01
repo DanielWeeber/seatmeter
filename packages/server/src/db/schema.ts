@@ -553,6 +553,10 @@ export interface MandantProjektkatalogTabelle {
   sync_deaktivieren_max_prozent: Generated<number>;
   sync_alarm_seit: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   sync_bremse_seit: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  /** Eine geänderte Grenze beginnt den Zeitraum der Bremse neu (Migration 0030). */
+  sync_fenster_ab: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  /** Seit wann die Quelle ohne Lücke über 25 h sendet; erst danach altern Projekte (Migration 0030). */
+  push_aktiv_ab: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   geaendert: ZeitDefault;
 }
 
@@ -572,6 +576,8 @@ export interface KatalogProjektTabelle {
   aktiv: Generated<boolean>;
   quelle: string;
   zuletzt_gesehen: ZeitDefault;
+  /** Vom Job wegen Alters deaktiviert, leer sobald wieder gesendet; zählt für die Bremse (Migration 0030). */
+  veraltet_seit: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   erstellt: ZeitDefault;
 }
 

@@ -5,7 +5,11 @@
 // - Die Eingabe wird großzügig gelesen: unbekannte Felder egal, Zahlen werden Text, unbrauchbare Werte gelten als
 //   weggelassen, zu lange gekürzt. Nur fehlender Name, unbrauchbare ID, falsches Token und Serverfehler sind Fehler.
 // - Kein Ratenlimit für gültige Tokens; begrenzt sind nur Fehlversuche, und das trifft nie ein gültiges Token.
-// Gleichzeitige Anfragen derselben ID sind sicher: erst INSERT … ON CONFLICT DO NOTHING, sonst Zeilensperre und Vergleich.
+// - Ein voller Lauf je Stunde ist ein normales Muster: Unverändertes liest nur und schreibt die Zeile höchstens einmal in
+//   24 h (`zuletzt_gesehen`); Zähler und letzte Synchronisation laufen gebündelt über den Puffer.
+// Gleichzeitige Anfragen derselben ID sind sicher: Erst Lesen ohne Sperre. Nur bei einer Änderung INSERT … ON CONFLICT DO
+// NOTHING, sonst Zeilensperre und erneuter Vergleich. Das Auffrischen schreibt nur `zuletzt_gesehen`, überschreibt also nie
+// die Werte einer anderen Anfrage.
 import {
   KATALOG_ID_MAX,
   KATALOG_NAME_MAX,
@@ -23,7 +27,8 @@ import { Ratenbegrenzer } from '../auth/ratenbegrenzer.js';
 import { withMandant } from '../db/mandant.js';
 import { sha256 } from '../krypto.js';
 import type { PluginKontext } from '../plugin.js';
-import { inaktivListe, syncPuffer, syncStandLaden } from './sync.js';
+import type { KatalogTrx } from './daten.js';
+import { GESEHEN_AUFLOESUNG_MS, inaktivListe, syncPuffer, syncStandLaden } from './sync.js';
 
 const PFAD = '/api/v1/projektkatalog/projekte';
 const PFAD_STATUS = '/api/v1/projektkatalog/sync-status';
@@ -33,15 +38,22 @@ const FEHLVERSUCHE_GRENZE = 30;
 const FEHLVERSUCHE_FENSTER_MS = 15 * 60_000;
 const UNGUELTIG = Symbol('ungueltiger Koerper');
 
-/** Steuerzeichen werden zu Leerzeichen, Ersetzungszeichen entfallen; `null`, wenn nichts bleibt. */
+/**
+ * Steuerzeichen werden zu Leerzeichen, Ersetzungszeichen und einzelne Surrogate entfallen; `null`, wenn nichts bleibt.
+ * Beim Kürzen nie mitten in einem Zeichen: Die Datenbank speicherte sonst ein Ersetzungszeichen, und der Vergleich fände bei
+ * jedem Lauf eine Änderung.
+ */
 function saeubern(wert: string, max: number): string | null {
   let aus = '';
   for (const c of wert) {
     const n = c.charCodeAt(0);
-    if (n === 0xfffd) continue;
+    if (n === 0xfffd || (c.length === 1 && n >= 0xd800 && n <= 0xdfff)) continue;
     aus += n < 0x20 || (n >= 0x7f && n <= 0x9f) ? ' ' : c;
   }
-  const t = aus.replace(/ {2,}/g, ' ').trim().slice(0, max).trim();
+  const lang = aus.replace(/ {2,}/g, ' ').trim();
+  const letztes = lang.charCodeAt(max - 1);
+  const gekuerzt = lang.slice(0, letztes >= 0xd800 && letztes <= 0xdbff ? max - 1 : max);
+  const t = gekuerzt.trim();
   return t === '' ? null : t;
 }
 
@@ -104,6 +116,78 @@ function koerperLesen(bytes: Buffer, contentType: string | undefined): unknown {
   } catch {
     return UNGUELTIG;
   }
+}
+
+/** Was der Vergleich braucht; dieselben Spalten mit und ohne Sperre. */
+const VERGLEICH_SPALTEN = [
+  'nummer',
+  'name',
+  'kunde',
+  'parent_externe_id',
+  'status_roh',
+  'aktiv',
+  'quelle',
+  'zuletzt_gesehen',
+  'veraltet_seit',
+] as const;
+
+interface Eingabe {
+  name: string;
+  nummer: string | null | undefined;
+  kunde: string | null | undefined;
+  parent: string | null | undefined;
+  status: string | null | undefined;
+  aktiv: boolean;
+}
+
+interface Gespeichert {
+  nummer: string | null;
+  name: string;
+  kunde: string | null;
+  parent_externe_id: string | null;
+  status_roh: string | null;
+  aktiv: boolean;
+  quelle: string;
+  veraltet_seit: Date | string | null;
+}
+
+/** Die Zeile nach dieser Anfrage: Weggelassen bleibt der gespeicherte Wert, `null` leert ihn. */
+function zielwerte(e: Eingabe, alt: Gespeichert) {
+  return {
+    name: e.name,
+    nummer: e.nummer === undefined ? alt.nummer : e.nummer,
+    kunde: e.kunde === undefined ? alt.kunde : e.kunde,
+    parent_externe_id: e.parent === undefined ? alt.parent_externe_id : e.parent,
+    status_roh: e.status === undefined ? alt.status_roh : e.status,
+    aktiv: e.aktiv,
+    // Mit im Vergleich: Der erste Push einer CSV-Zeile ist eine echte Änderung, erst danach kann sie altern.
+    quelle: 'api',
+  };
+}
+
+function unveraendert(e: Eingabe, alt: Gespeichert): boolean {
+  // Wegen Alters deaktiviert und wieder gesendet, auch als inaktiv: Das ist nicht mehr entfallen und darf nicht weiter für
+  // die Bremse zählen. Also einmal schreiben und den Merker löschen.
+  if (alt.veraltet_seit !== null) return false;
+  const werte = zielwerte(e, alt);
+  return (Object.keys(werte) as (keyof typeof werte)[]).every((f) => werte[f] === alt[f]);
+}
+
+/** Unverändert: nur `zuletzt_gesehen`, und nur wenn es die Auflösung erreicht hat. Gleichzeitig schreibt einer. */
+async function gesehenAuffrischen(
+  trx: KatalogTrx,
+  id: string,
+  gesehen: Date | string,
+  jetzt: Date,
+): Promise<void> {
+  const grenze = new Date(jetzt.getTime() - GESEHEN_AUFLOESUNG_MS);
+  if (new Date(gesehen) > grenze) return;
+  await trx
+    .updateTable('katalog_projekt')
+    .set({ zuletzt_gesehen: jetzt })
+    .where('externe_id', '=', id)
+    .where('zuletzt_gesehen', '<=', grenze)
+    .execute();
 }
 
 interface TokenZugang {
@@ -202,48 +286,52 @@ export function katalogPushRouten(app: FastifyInstance, ctx: PluginKontext) {
           (typeof status === 'string'
             ? !inaktivListe(s?.inaktiv_status).includes(status.toLowerCase())
             : true);
-        const neu = await trx
-          .insertInto('katalog_projekt')
-          .values({
-            mandant_id: zugang.mandantId,
-            externe_id: id,
-            nummer: nummer ?? null,
-            name,
-            kunde: kunde ?? null,
-            parent_externe_id: parent ?? null,
-            status_roh: status ?? null,
-            aktiv,
-            quelle: 'api',
-            zuletzt_gesehen: jetzt,
-          })
-          .onConflict((oc) => oc.columns(['mandant_id', 'externe_id']).doNothing())
-          .returning('id')
+        const eingabe: Eingabe = { name, nummer, kunde, parent, status, aktiv };
+        const vorab = await trx
+          .selectFrom('katalog_projekt')
+          .select(VERGLEICH_SPALTEN)
+          .where('externe_id', '=', id)
           .executeTakeFirst();
-        if (neu) return { ergebnis: 'neu' as const, aktiv };
+        if (vorab && unveraendert(eingabe, vorab)) {
+          await gesehenAuffrischen(trx, id, vorab.zuletzt_gesehen, jetzt);
+          return { ergebnis: 'unveraendert' as const, aktiv };
+        }
+        if (!vorab) {
+          const neu = await trx
+            .insertInto('katalog_projekt')
+            .values({
+              mandant_id: zugang.mandantId,
+              externe_id: id,
+              nummer: nummer ?? null,
+              name,
+              kunde: kunde ?? null,
+              parent_externe_id: parent ?? null,
+              status_roh: status ?? null,
+              aktiv,
+              quelle: 'api',
+              zuletzt_gesehen: jetzt,
+            })
+            .onConflict((oc) => oc.columns(['mandant_id', 'externe_id']).doNothing())
+            .returning('id')
+            .executeTakeFirst();
+          if (neu) return { ergebnis: 'neu' as const, aktiv };
+        }
         const alt = await trx
           .selectFrom('katalog_projekt')
-          .select(['nummer', 'name', 'kunde', 'parent_externe_id', 'status_roh', 'aktiv'])
+          .select(VERGLEICH_SPALTEN)
           .where('externe_id', '=', id)
           .forUpdate()
           .executeTakeFirstOrThrow();
-        // Weggelassen bleibt der gespeicherte Wert, `null` leert ihn.
-        const werte = {
-          name,
-          nummer: nummer === undefined ? alt.nummer : nummer,
-          kunde: kunde === undefined ? alt.kunde : kunde,
-          parent_externe_id: parent === undefined ? alt.parent_externe_id : parent,
-          status_roh: status === undefined ? alt.status_roh : status,
-          aktiv,
-        };
-        const gleich = (Object.keys(werte) as (keyof typeof werte)[]).every(
-          (f) => werte[f] === alt[f],
-        );
+        if (unveraendert(eingabe, alt)) {
+          await gesehenAuffrischen(trx, id, alt.zuletzt_gesehen, jetzt);
+          return { ergebnis: 'unveraendert' as const, aktiv };
+        }
         await trx
           .updateTable('katalog_projekt')
-          .set({ ...werte, quelle: 'api', zuletzt_gesehen: jetzt })
+          .set({ ...zielwerte(eingabe, alt), zuletzt_gesehen: jetzt, veraltet_seit: null })
           .where('externe_id', '=', id)
           .execute();
-        return { ergebnis: gleich ? ('unveraendert' as const) : ('aktualisiert' as const), aktiv };
+        return { ergebnis: 'aktualisiert' as const, aktiv };
       });
       puffer.merken(zugang.mandantId, zugang.id, e.ergebnis, jetzt, request.log);
       const antwort: KatalogPushAntwort = {

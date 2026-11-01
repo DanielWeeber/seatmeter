@@ -5,6 +5,7 @@
 // - `link_basis`: Mit `SEATMETER_INGEST_URL` ohne `SEATMETER_PUBLIC_URL` zeigte der Link auf den Ingest-Host (404).
 // In beiden Fällen weigert sich der Schalter, und die Prüf-Route antwortet `frei`, falls die Stufe schon aktiv ist.
 import type { KatalogHinderung, KatalogStufe } from '@seatmeter/shared';
+import { sql } from 'kysely';
 import type { Konfiguration } from '../config.js';
 import type { KatalogTrx } from './daten.js';
 
@@ -72,10 +73,25 @@ export async function einstellungSetzen(
     }).filter(([, w]) => w !== undefined),
   ) as KatalogEinstellungWerte;
   if (Object.keys(werte).length === 0) return;
+  const jetzt = new Date();
+  const grenze = e.sync_deaktivieren_max_prozent;
   await trx
     .insertInto('mandant_projektkatalog')
     .values({ mandant_id: mandantId, ...werte })
-    .onConflict((oc) => oc.column('mandant_id').doUpdateSet({ ...werte, geaendert: new Date() }))
+    .onConflict((oc) =>
+      oc.column('mandant_id').doUpdateSet({
+        ...werte,
+        geaendert: jetzt,
+        // Nur eine echte Änderung: Die Seite speichert die Grenze immer mit.
+        ...(grenze === undefined
+          ? {}
+          : {
+              sync_fenster_ab: sql<Date | null>`CASE
+                WHEN mandant_projektkatalog.sync_deaktivieren_max_prozent <> ${grenze}::int THEN ${jetzt}::timestamptz
+                ELSE mandant_projektkatalog.sync_fenster_ab END`,
+            }),
+      }),
+    )
     .execute();
 }
 

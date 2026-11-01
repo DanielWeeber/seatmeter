@@ -22,7 +22,12 @@ import { TEXT_NUR_PROJEKTWAHL } from '../../auth/AuthTor';
 import { ssoStart } from '../../auth/Formulare';
 import { json, kennzahlen, ME_ADMIN, ME_LESER, MONAT, rendereApp } from '../../test/index';
 import { AUSWAHL_MAX_TREFFER, filtereBaum, ProjektAuswahl, projektText } from './ProjektAuswahl';
-import { TEXT_BREMSE, TEXT_NICHT_ERREICHBAR, TEXT_SYNC_VERALTET } from './Projektkatalog';
+import {
+  TEXT_BREMSE,
+  TEXT_DEAKTIVIERUNG_UEBERSPRUNGEN,
+  TEXT_NICHT_ERREICHBAR,
+  TEXT_SYNC_VERALTET,
+} from './Projektkatalog';
 import { TEXT_ZURUECK } from './Projektwahl';
 
 const K1 = '00000000-0000-4000-8000-000000000a01';
@@ -229,7 +234,7 @@ describe('Projektliste als Baum', () => {
     expect(screen.getByText(/5 von 5 Projekten/)).toBeTruthy();
   });
 
-  it('die Suche behält die Vorfahren; ein Treffer auf dem Elternprojekt bleibt wählbar', () => {
+  it('die Suche behält die Vorfahren und zeigt aktive Nachfahren eines Treffers', () => {
     render(<Rahmen />);
     const feld = screen.getByRole('group', { name: 'Projekte' });
     const suche = screen.getByLabelText('Projekt suchen');
@@ -241,12 +246,84 @@ describe('Projektliste als Baum', () => {
     ]);
     expect(screen.getByText(/1 von 5 Projekten/)).toBeTruthy();
     fireEvent.change(suche, { target: { value: 'webshop' } });
-    expect(zeilenTexte(feld)).toEqual(['W – Webshop (Muster AG)']);
-    expect(within(feld).getByRole('radio')).toBeTruthy();
+    expect(zeilenTexte(feld)).toEqual([
+      'W – Webshop (Muster AG)',
+      'W-1 – AP Login (Muster AG)',
+      'W-1-1 – Passwort (Muster AG)',
+    ]);
+    expect(within(feld).getAllByRole('radio')).toHaveLength(3);
+    expect(screen.getByText(/3 von 5 Projekten/)).toBeTruthy();
     // Aktives Kind unter inaktivem Elternprojekt bleibt wählbar, der Vorfahre steht deaktiviert dabei.
     fireEvent.change(suche, { target: { value: 'nachlauf' } });
     expect(zeilenTexte(feld)).toEqual(['A – Archiv (inaktiv)', 'A-1 – Nachlauf']);
     expect(within(feld).getAllByRole('radio')).toHaveLength(1);
+    // Suche nach dem geschlossenen Projekt: ausgegraut, das offene Arbeitspaket darunter wählbar.
+    fireEvent.change(suche, { target: { value: 'archiv' } });
+    expect(zeilenTexte(feld)).toEqual(['A – Archiv (inaktiv)', 'A-1 – Nachlauf']);
+    expect(within(feld).getAllByRole('radio')).toHaveLength(1);
+    expect(within(feld).queryByLabelText(/Archiv/)).toBeNull();
+    expect(screen.getByText(/1 von 5 Projekten/)).toBeTruthy();
+  });
+
+  it('inaktiv ohne Aktives darunter: weder in der Standardansicht noch in der Suche', () => {
+    const projekte = [
+      kurz('z1', 'Z', 'Sackgasse', null, { aktiv: false, externe_id: 'z' }),
+      kurz('z2', 'Z-1', 'Auch zu', null, {
+        aktiv: false,
+        externe_id: 'z-1',
+        parent_externe_id: 'z',
+      }),
+      kurz('o1', 'O', 'Offen', null, { externe_id: 'o' }),
+    ];
+    render(<ProjektAuswahl projekte={projekte} gewaehlt={null} onWahl={() => undefined} />);
+    const feld = screen.getByRole('group', { name: 'Projekte' });
+    expect(zeilenTexte(feld)).toEqual(['O – Offen']);
+    const suche = screen.getByLabelText('Projekt suchen');
+    fireEvent.change(suche, { target: { value: 'sackgasse' } });
+    expect(zeilenTexte(feld)).toEqual(['Kein Projekt gefunden.']);
+    fireEvent.change(suche, { target: { value: 'auch zu' } });
+    expect(zeilenTexte(feld)).toEqual(['Kein Projekt gefunden.']);
+  });
+
+  it('der Kundenfilter nimmt Nachfahren ohne eigenen Kunden mit, solche mit anderem Kunden nicht', () => {
+    const projekte = [
+      kurz('p1', 'P', 'Oben', 'Muster AG', { externe_id: 'p' }),
+      kurz('p2', 'P-1', 'Ohne Kunde', null, { externe_id: 'p-1', parent_externe_id: 'p' }),
+      kurz('p3', 'P-2', 'Fremd', 'Beispiel GmbH', { externe_id: 'p-2', parent_externe_id: 'p' }),
+    ];
+    render(<ProjektAuswahl projekte={projekte} gewaehlt={null} onWahl={() => undefined} />);
+    fireEvent.change(screen.getByLabelText('Kunde'), { target: { value: 'Muster AG' } });
+    const feld = screen.getByRole('group', { name: 'Projekte' });
+    expect(zeilenTexte(feld)).toEqual(['P – Oben (Muster AG)', 'P-1 – Ohne Kunde']);
+  });
+
+  it('10 000 Einträge, drei Viertel inaktiv: höchstens 100 Zeilen mit Hinweis, Rendern und Suche messbar klein', () => {
+    const viele: KatalogKurz[] = Array.from({ length: 10_000 }, (_, i) =>
+      kurz(`id-${i}`, `P-${i}`, `Projekt ${i}`, `Kunde ${i % 50}`, {
+        externe_id: `e-${i}`,
+        parent_externe_id: i % 4 === 0 ? `nie-${i}` : `e-${i - (i % 4)}`,
+        aktiv: i % 4 === 3,
+      }),
+    );
+    const a = performance.now();
+    render(<ProjektAuswahl projekte={viele} gewaehlt={null} onWahl={() => undefined} />);
+    const b = performance.now();
+    fireEvent.change(screen.getByLabelText('Projekt suchen'), { target: { value: 'projekt 1' } });
+    const c = performance.now();
+    console.log(
+      `Auswahl 10000 (75 % inaktiv): erstes Rendern ${(b - a).toFixed(0)} ms, Suche ${(c - b).toFixed(0)} ms`,
+    );
+    expect(screen.getAllByRole('radio').length).toBeLessThanOrEqual(AUSWAHL_MAX_TREFFER);
+    expect(screen.getByText(/bitte Suche eingrenzen/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Projekt suchen'), {
+      target: { value: 'projekt 9996' },
+    });
+    // Die geschlossene Wurzel 9996 führt zum offenen Kind 9999.
+    const feld = screen.getByRole('group', { name: 'Projekte' });
+    expect(zeilenTexte(feld)).toEqual([
+      'P-9996 – Projekt 9996 (Kunde 46) (inaktiv)',
+      'P-9999 – Projekt 9999 (Kunde 49)',
+    ]);
   });
 
   it('der Kundenfilter wirkt mit Vorfahren; die Wahl zeigt den vollen Pfad', () => {
@@ -294,12 +371,48 @@ describe('Suche in der Projektliste', () => {
   it('findet über Nummer, Name und Kunde, alle Wörter müssen passen', () => {
     const treffer = (s: string, k = '') =>
       filtereBaum(katalogBaumBauen(KURZ), s, k).map((z) => z.projekt.nummer);
-    expect(treffer('')).toEqual(['P-100', 'P-200', 'P-300']);
+    // Wurzeln nach Name.
+    expect(treffer('')).toEqual(['P-300', 'P-200', 'P-100']);
     expect(treffer('p-2')).toEqual(['P-200']);
     expect(treffer('webshop')).toEqual(['P-100']);
     expect(treffer('muster web')).toEqual(['P-100']);
     expect(treffer('muster portal')).toEqual([]);
     expect(treffer('', 'Beispiel GmbH')).toEqual(['P-200']);
+  });
+
+  describe('„ral“ mitten im Wort', () => {
+    const LISTE_RAL = [
+      kurz('r1', 'Z-1', 'Zentrale Dienste', null),
+      kurz('r2', 'G-1', 'GENERAL Portal', null),
+      kurz('r3', 'RAL-7', 'Nummer passt', null),
+      kurz('r4', 'K-1', 'Kunde passt', 'Mineralwerk AG'),
+      kurz('r5', 'X-1', 'Ohne Bezug', 'Beispiel GmbH'),
+    ];
+    const treffer = (s: string) =>
+      filtereBaum(katalogBaumBauen(LISTE_RAL), s, '').map((z) => z.projekt.nummer);
+
+    it('findet in Nummer, Name und Kunde, Groß-/Kleinschreibung egal; ohne die Zeichenfolge nicht', () => {
+      expect(treffer('ral').sort()).toEqual(['G-1', 'K-1', 'RAL-7', 'Z-1']);
+      expect(treffer('RAL').sort()).toEqual(['G-1', 'K-1', 'RAL-7', 'Z-1']);
+      expect(treffer('rAl')).not.toContain('X-1');
+    });
+
+    it('zwei Wörter in umgekehrter Reihenfolge, auch über Felder hinweg', () => {
+      expect(treffer('dienste zentrale')).toEqual(['Z-1']);
+      expect(treffer('PORTAL ral')).toEqual(['G-1']);
+      expect(treffer('werk k-1')).toEqual(['K-1']);
+      expect(treffer('bezug ral')).toEqual([]);
+    });
+
+    it('in der Oberfläche: Eingabe zeigt genau diese Zeilen', () => {
+      render(<ProjektAuswahl projekte={LISTE_RAL} gewaehlt={null} onWahl={() => undefined} />);
+      fireEvent.change(screen.getByLabelText('Projekt suchen'), { target: { value: 'ral' } });
+      const feld = screen.getByRole('group', { name: 'Projekte' });
+      expect(within(feld).getAllByRole('radio')).toHaveLength(4);
+      expect(within(feld).getByLabelText('Z-1 – Zentrale Dienste')).toBeTruthy();
+      expect(within(feld).getByLabelText('G-1 – GENERAL Portal')).toBeTruthy();
+      expect(within(feld).queryByText(/Ohne Bezug/)).toBeNull();
+    });
   });
 });
 
@@ -374,7 +487,7 @@ describe('Seite Projektkatalog (Einrichtung)', () => {
     expect(screen.getByText(TEXT_BREMSE)).toBeTruthy();
     expect(screen.getByText('1 neu, 2 aktualisiert, 30 unverändert, 4 abgelehnt')).toBeTruthy();
     fireEvent.change(screen.getByLabelText(/Warnen nach Stunden/), { target: { value: '12' } });
-    fireEvent.change(screen.getByLabelText(/Höchstens .* der aktiven Projekte/), {
+    fireEvent.change(screen.getByLabelText(/Höchstens .* der aktiven gesendeten Projekte/), {
       target: { value: '40' },
     });
     fireEvent.change(screen.getByLabelText(/Status, die ein Projekt inaktiv machen/), {
@@ -470,6 +583,35 @@ describe('Seite Projektkatalog (Einrichtung)', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Importieren' }).disabled).toBe(
       true,
     );
+  });
+
+  it('übersprungenes Deaktivieren ohne abgelehnte Zeile: Der Hinweis behauptet keine Ablehnung', async () => {
+    rendereApp('/einrichtung/projektkatalog', {
+      ...routen,
+      'POST /api/v1/projektkatalog/import/csv': json({
+        neu: 1,
+        aktualisiert: 0,
+        unveraendert: 0,
+        deaktiviert: 0,
+        abgelehnt: 0,
+        aktiv_gesamt: 1,
+        abgelehnte_zeilen: [],
+        hinweise: [
+          'Zeile 2: Mehrzeiliger Text mit Trennzeichen, womöglich sind Zeilen verschluckt.',
+        ],
+        deaktivierung_uebersprungen: true,
+        trockenlauf: false,
+      }),
+    });
+    const datei = await screen.findByLabelText('CSV-Datei wählen');
+    fireEvent.change(datei, {
+      target: { files: [new File(['ID;Name\nP-1;Eins\n'], 'p.csv', { type: 'text/csv' })] },
+    });
+    await screen.findByText(/p\.csv/);
+    fireEvent.click(screen.getByRole('button', { name: 'Importieren' }));
+    expect(await screen.findByText(TEXT_DEAKTIVIERUNG_UEBERSPRUNGEN)).toBeTruthy();
+    expect(TEXT_DEAKTIVIERUNG_UEBERSPRUNGEN).not.toMatch(/abgelehnt/i);
+    expect(screen.getByText(/Zeile 2: Mehrzeiliger Text/)).toBeTruthy();
   });
 
   it('prüft ohne zu speichern, zeigt alle Zähler und lässt die Datei geladen', async () => {

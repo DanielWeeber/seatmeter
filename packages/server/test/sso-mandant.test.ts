@@ -8,6 +8,7 @@ import { erstelleDb, sha256, withMandant, type Db } from '../src/index.js';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { setzeTxtAufloeser } from '../src/konten/domains.js';
+import { VERWALTUNG_AUDIT } from '../src/mandant/verwaltung.js';
 import { CLIENT_ID, CLIENT_SECRET, FakeIssuer } from './fake-issuer.js';
 import { cookiesAus, kernApp, legeMandantAn, meldeAn } from './api-hilfen.js';
 
@@ -301,6 +302,90 @@ describe('SSO je Mandant', () => {
         })
       ).statusCode,
     ).toBe(403);
+  });
+
+  it('Einladung annehmen: Konto nur mit `entwickler` steht nicht im Audit, andere Rollen weiter', async () => {
+    const einladen = async (rollen: string[]) => {
+      const r = await anfrage('POST', `/api/v1/mandant/konten?mandant=${mandantA}`, adminA, {
+        benutzername: `audit-${randomUUID().slice(0, 6)}@${domainA}`,
+        rollen,
+      });
+      expect(r.statusCode, r.body).toBe(201);
+      const { konto, einladung } = r.json();
+      const an = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/einladung',
+        payload: { token: einladung.url.split('/').pop(), passwort: 'ein-langes-passwort-123' },
+      });
+      expect(an.statusCode, an.body).toBe(200);
+      const zeile = await withMandant(db, mandantA, (t) =>
+        t
+          .selectFrom('audit')
+          .select(['benutzer_id', 'objekt'])
+          .where('aktion', '=', VERWALTUNG_AUDIT.einladungAngenommen)
+          .orderBy('id', 'desc')
+          .limit(1)
+          .executeTakeFirstOrThrow(),
+      );
+      return { kontoId: konto.id as string, zeile };
+    };
+    const nurWahl = await einladen(['entwickler']);
+    expect(nurWahl.zeile.benutzer_id).toBeNull();
+    expect(nurWahl.zeile.objekt).toBe('Rolle entwickler');
+    expect(nurWahl.zeile.objekt).not.toContain(nurWahl.kontoId);
+    // Die Einladung selbst nimmt ein Admin offen vor: Sie bleibt mit Konto im Audit (Grenze in der Doku).
+    const offen = await withMandant(db, mandantA, (t) =>
+      t
+        .selectFrom('audit')
+        .select(['benutzer_id', 'objekt'])
+        .where('aktion', '=', VERWALTUNG_AUDIT.kontoEingeladen)
+        .where('objekt', '=', `benutzer:${nurWahl.kontoId}`)
+        .execute(),
+    );
+    expect(offen.map((z) => z.benutzer_id)).toEqual([adminA.benutzerId]);
+    const mitRolle = await einladen(['entwickler', 'controller']);
+    expect(mitRolle.zeile.benutzer_id).toBe(mitRolle.kontoId);
+    expect(mitRolle.zeile.objekt).toBe(`benutzer:${mitRolle.kontoId}`);
+    const nurLeser = await einladen(['controller']);
+    expect(nurLeser.zeile.benutzer_id).toBe(nurLeser.kontoId);
+  });
+
+  it('Mandant wechseln: in einen Mandanten nur mit `entwickler` kein Eintrag, andere Rollen wie bisher', async () => {
+    const u = await meldeAn(db, mandantA, 'controller');
+    await db
+      .insertInto('rolle')
+      .values({ mandant_id: mandantB, benutzer_id: u.benutzerId, rolle: 'entwickler' })
+      .execute();
+    const wechseln = async (mandant_id: string) => {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/mandant',
+        headers: u.headers,
+        payload: { mandant_id },
+      });
+      expect(r.statusCode, r.body).toBe(200);
+    };
+    const wechsel = (mandantId: string) =>
+      withMandant(db, mandantId, (t) =>
+        t
+          .selectFrom('audit')
+          .select(['id', 'benutzer_id'])
+          .where('aktion', '=', 'Mandant gewechselt')
+          .execute(),
+      );
+    const vorherB = (await wechsel(mandantB)).length;
+    await wechseln(mandantB);
+    expect(await wechsel(mandantB)).toHaveLength(vorherB);
+    // Zurück in den Mandanten mit Dashboard-Rolle: steht wie bisher mit Konto drin.
+    await wechseln(mandantA);
+    expect((await wechsel(mandantA)).map((z) => z.benutzer_id)).toContain(u.benutzerId);
+    // Mit weiterer Rolle zählt es nicht mehr als „nur entwickler“.
+    await db
+      .insertInto('rolle')
+      .values({ mandant_id: mandantB, benutzer_id: u.benutzerId, rolle: 'controller' })
+      .execute();
+    await wechseln(mandantB);
+    expect((await wechsel(mandantB)).map((z) => z.benutzer_id)).toContain(u.benutzerId);
   });
 
   it('Einladung: Link einmal nutzbar, vorher keine Anmeldung, Ablauf, danach Passwort-Login', async () => {

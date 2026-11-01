@@ -196,6 +196,61 @@ describe('Hook der Projektwahl', () => {
     }
   });
 
+  it('ein `@` hinter `?` oder `#` im Passwort: kein Rest davon wird gesendet', () => {
+    for (const remote of [
+      'https://user:pa/ss?x@git.example.org/org/a',
+      'https://user:pa/ss#x@git.example.org/org/a',
+      'https://user:pa#ss@git.example.org/org/a',
+      'https://user:pa?ss@git.example.org/org/a',
+      'user:pa?ss@git.example.org:org/a',
+      'user:pa#ss@git.example.org:org/a',
+    ]) {
+      rmSync(protokoll, { force: true });
+      rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+      const r = lauf({ remote, antwort: 'zugeordnet\n' });
+      expect(r.curl, remote).toContain('[repo=]');
+      expect(r.curl, remote).not.toMatch(/user|pa\/|ss|git\.example/);
+      expect(readdirSync(join(ordner, '.cache', 'seatmeter'))[0], remote).toMatch(/^s\d+-/);
+    }
+    // Ohne `@` werden `?` und `#` weiter nur abgeschnitten.
+    rmSync(protokoll, { force: true });
+    rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+    const sauber = lauf({
+      remote: 'https://git.example.org/o/r.git?x=1#y',
+      antwort: 'zugeordnet\n',
+    });
+    expect(sauber.curl).toContain('[repo=https://git.example.org/o/r.git]');
+  });
+
+  it('scp-Form: Der Nutzer wird immer zu git, ein Token als Nutzer verlässt den Rechner nicht', () => {
+    const marken = new Set<string>();
+    for (const remote of [
+      'git@git.example.org:o/r.git',
+      'ghp_GEHEIM123@git.example.org:o/r.git',
+      'deploy.nutzer-1@git.example.org:o/r.git',
+    ]) {
+      rmSync(protokoll, { force: true });
+      rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+      const r = lauf({ remote, antwort: 'zugeordnet\n' });
+      expect(r.curl, remote).toContain('[repo=git@git.example.org:o/r.git]');
+      expect(r.curl, remote).not.toMatch(/GEHEIM|deploy/);
+      // Gleiche Marke: Der Nutzer entscheidet nicht über das Repo.
+      marken.add(readdirSync(join(ordner, '.cache', 'seatmeter'))[0] ?? '');
+    }
+    expect(marken.size).toBe(1);
+    // Ohne Nutzer und in der Schema-Form ändert sich nichts.
+    for (const [remote, gesendet] of [
+      ['git.example.org:o/r.git', 'git.example.org:o/r.git'],
+      ['ssh://ghp_GEHEIM@git.example.org:2222/o/r.git', 'ssh://git.example.org:2222/o/r.git'],
+    ] as const) {
+      rmSync(protokoll, { force: true });
+      rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+      expect(lauf({ remote, antwort: 'zugeordnet\n' }).curl, remote).toContain(
+        `[repo=${gesendet}]`,
+      );
+    }
+  });
+
   it('sendet nur Sitzungs-ID und Repo-URL ohne Zugangsdaten, nie den Prompt', () => {
     const r = lauf({ antwort: 'zugeordnet\n' });
     expect(r.status).toBe(0);

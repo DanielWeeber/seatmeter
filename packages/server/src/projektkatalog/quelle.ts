@@ -183,12 +183,14 @@ export function katalogCsvDekodieren(bytes: Uint8Array): string {
 
 const ZEILENUMBRUCH = /[\r\n]/;
 
-/** Mehrzeiliger Text, dessen spätere Zeilen das Trennzeichen enthalten: Das kann eine verschluckte CSV-Zeile sein. */
-function verschlucktWomoeglich(feld: string, trenn: string): boolean {
-  return feld
-    .split(/\r\n|\r|\n/)
-    .slice(1)
-    .some((zeile) => zeile.includes(trenn));
+/**
+ * Mehrzeiliger Text, von dem eine Zeile wie eine CSV-Zeile aussieht (mindestens so viele Trennzeichen wie Spalten minus
+ * eins): Das kann eine verschluckte Zeile sein, auch die erste, wenn das Anführungszeichen am Anfang des Feldes steht. Eine
+ * Beschreibung mit ein paar Trennzeichen fällt so nicht auf.
+ */
+function verschlucktWomoeglich(feld: string, trenn: string, spalten: number): boolean {
+  if (!ZEILENUMBRUCH.test(feld)) return false;
+  return feld.split(/\r\n|\r|\n/).some((zeile) => zeile.split(trenn).length >= spalten);
 }
 
 function zeilenLesen(csv: string, trenn: string) {
@@ -208,6 +210,12 @@ export function leseKatalogCsv(csv: string, optionen: KatalogCsvOptionen = {}): 
   const [kopfZeile, ...daten] = zeilenLesen(csv, trenn);
   if (!kopfZeile) throw new QuelleFehler('Die Datei ist leer.');
   const kopfRoh = kopfZeile.felder;
+  // Ein Zeilenumbruch in der Kopfzeile heißt: Ein Anführungszeichen hat Datenzeilen verschluckt, die sonst als fehlend gälten.
+  if (kopfRoh.some((f) => ZEILENUMBRUCH.test(f))) {
+    throw new QuelleFehler(
+      'Die Kopfzeile enthält einen Zeilenumbruch: Vermutlich hat ein Anführungszeichen Zeilen verschluckt.',
+    );
+  }
   const s = spaltenFinden(kopfRoh, csv, trenn, optionen.spalten);
   if (daten.length === 0) throw new QuelleFehler('Die Datei enthält keine Projekte.');
   if (daten.length > KATALOG_IMPORT_MAX) {
@@ -236,9 +244,11 @@ export function leseKatalogCsv(csv: string, optionen: KatalogCsvOptionen = {}): 
       ablehnen(zeile, 'Spaltenzahl weicht von der Kopfzeile ab.');
       continue;
     }
-    // In einer Spalte, die nicht zählt, ist mehrzeiliger Text erlaubt. Steht aber das Trennzeichen in einer späteren
-    // Zeile davon, kann ein verirrtes Anführungszeichen ganze CSV-Zeilen verschluckt haben.
-    if (felder.some((f, i) => !zugeordnet.has(i) && verschlucktWomoeglich(f, trenn))) {
+    // In einer Spalte, die nicht zählt, ist mehrzeiliger Text erlaubt. Sieht aber eine Zeile darin wie eine CSV-Zeile aus,
+    // kann ein verirrtes Anführungszeichen ganze Zeilen verschluckt haben.
+    if (
+      felder.some((f, i) => !zugeordnet.has(i) && verschlucktWomoeglich(f, trenn, felder.length))
+    ) {
       nummerUnlesbar = true;
       if (hinweise.length < KATALOG_ABGELEHNT_MELDUNGEN_MAX) {
         hinweise.push(
@@ -258,14 +268,11 @@ export function leseKatalogCsv(csv: string, optionen: KatalogCsvOptionen = {}): 
       ablehnen(zeile, 'Externe ID fehlt, ist zu lang oder enthält Steuerzeichen.');
       continue;
     }
-    // Die erste Zeile einer ID entscheidet, auch wenn sie selbst abgelehnt wird.
-    if (gesehen.has(id)) {
-      ablehnen(zeile, 'Externe ID kommt doppelt vor, die erste Zeile gilt.');
-      continue;
-    }
+    const doppelt = gesehen.has(id);
     gesehen.add(id);
     // Zeilenumbruch in einer Spalte, die zählt: Ein Anführungszeichen hat vermutlich Zeilen verschluckt, deren
-    // Projekte sonst als fehlend gälten. Geprüft vor dem Kürzen, ein Umbruch am Feldende zählt mit.
+    // Projekte sonst als fehlend gälten. Geprüft vor dem Kürzen, ein Umbruch am Feldende zählt mit. Vor der Dublettenprüfung:
+    // Auch eine doppelte Zeile kann Zeilen verschluckt haben.
     if (
       [s.nummer, s.name, s.kunde, s.aktiv, s.parent].some(
         (i) => i >= 0 && ZEILENUMBRUCH.test(felder[i] ?? ''),
@@ -274,6 +281,11 @@ export function leseKatalogCsv(csv: string, optionen: KatalogCsvOptionen = {}): 
       geschuetzt.add(id);
       nummerUnlesbar = true;
       ablehnen(zeile, 'Zeilenumbruch in einer Spalte, die zählt.');
+      continue;
+    }
+    // Die erste Zeile einer ID entscheidet, auch wenn sie selbst abgelehnt wird.
+    if (doppelt) {
+      ablehnen(zeile, 'Externe ID kommt doppelt vor, die erste Zeile gilt.');
       continue;
     }
     // Eine fehlende Spalte heißt: Der gespeicherte Wert bleibt. Ein leeres Feld leert ihn.

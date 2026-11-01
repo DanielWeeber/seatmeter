@@ -26,6 +26,8 @@ curl -sS -X PUT 'https://seatmeter.example.com/api/v1/projektkatalog/projekte/47
 
 `ergebnis` ist `neu`, `aktualisiert` oder `unveraendert`. Die Anfrage ist idempotent, die Reihenfolge der Projekte ist egal.
 
+**Voller Lauf jede Stunde ist ein normales Muster:** Das Quellsystem darf bei jedem Lauf alle Projekte senden, auch geschlossene, eines nach dem anderen. Unverändertes kostet nur Lesen: seatmeter vergleicht ohne Sperre und schreibt die Zeile nicht, höchstens einmal in 24 Stunden `zuletzt_gesehen`. Es entsteht keine Audit-Zeile je Anfrage. Letzte Synchronisation und Zähler laufen gebündelt weiter, darum bleibt der Status auch bei Läufen ohne jede Änderung frisch.
+
 | Feld | Pflicht | Bedeutung |
 |---|---|---|
 | ID im Pfad | ja | Externe ID, der Schlüssel des Projekts, höchstens 200 Zeichen. URL-kodiert (`P%2F100` ergibt `P/100`), ein Schrägstrich am Ende ist egal. |
@@ -54,12 +56,14 @@ curl -sS -X PUT 'https://seatmeter.example.com/api/v1/projektkatalog/projekte/47
 | 400 | `name` fehlt, kein JSON-Objekt oder die ID ist unbrauchbar (leer, zu lang, Steuerzeichen) |
 | 401 | Token fehlt, ist unbekannt, widerrufen oder hat den falschen Zweck |
 | 413 | Körper größer als 4 MB |
-| 429 | Nur nach vielen Fehlversuchen mit ungültigem Token. Gültige Tokens haben kein Ratenlimit und sind davon nicht betroffen. |
+| 429 | Nur nach vielen Fehlversuchen mit ungültigem Token (30 je Client-IP in 15 Minuten). Gültige Tokens haben hier kein Ratenlimit und sind davon nicht betroffen. |
 | 5xx | Serverfehler; das Quellsystem soll den Lauf später wiederholen |
 
 **Token:** Unter **Einrichtung → Projektkatalog → API-Tokens** ein Token mit dem Zweck „Push aus dem Quellsystem“ (`katalog_api`) anlegen. Es wird nur einmal angezeigt, gilt für diesen Mandanten und nur für diese Route und den Sync-Status und lässt sich jederzeit widerrufen. Ein Token vom Zweck `csv_import` gilt hier nicht, eine Anmeldung per Cookie auch nicht. Falscher Zweck ergibt 401. Das Mandanten-Token aus den verwalteten Einstellungen gilt nie, weil alle Beschäftigten es lesen können.
 
 **Vor einem Reverse Proxy** müssen die Routen ohne vorgeschaltete Anmeldung erreichbar sein, sonst bekommt das Quellsystem eine Weiterleitung und bricht ab. Welche genau und wie: `deploy/README.md`, Abschnitt Reverse-Proxy, auch für nginx (`proxy_intercept_errors off`, `proxy_pass` ohne URI-Teil).
+
+**Ratenlimits:** Push und Status sind für gültige Tokens nicht begrenzt, Fehlversuche schon. `SEATMETER_RATE_*` gilt nur für die Ingest-Pfade und berührt keine dieser Routen. Der CSV-Upload hat eine feste, großzügige Grenze je Token (10 Dateien je Minute, Stoß 30), weil jede Datei den ganzen Katalog abgleicht; ein Upload je Lauf erreicht sie nie. Eine Begrenzung im Proxy (nginx `limit_req`, Caddy-Module, WAF) muss diese Routen ausnehmen: Das Quellsystem bricht bei 429 seinen ganzen Lauf ab.
 
 ### Wenn die Synchronisation ausbleibt
 
@@ -73,12 +77,16 @@ Bewertet wird erst, wenn ein Token existiert oder schon synchronisiert wurde; ab
 
 **Nicht mehr gesendete Projekte deaktivieren** (Standard aus): Mit „nach Tagen deaktivieren“ werden Projekte inaktiv, die so viele Tage vor dem letzten Push zuletzt gesendet wurden. Gemessen wird gegen den letzten Push, nicht gegen die Uhr: Verstummt das Quellsystem, altert nichts.
 
+- **Genauigkeit einen Tag:** `zuletzt_gesehen` ist bewusst bis zu 24 Stunden alt, weil unveränderte Anfragen die Zeile nicht schreiben. Die Grenze ist darum `letzter Push − Tage − 24 Stunden`. Ein nicht mehr gesendetes Projekt wird nach den eingestellten Tagen bis einem Tag mehr inaktiv (plus bis zu einer Stunde bis zum nächsten Job), nie früher. Ein Projekt, das jeder Lauf sendet, sieht nie veraltet aus, auch wenn der Job mitten im Lauf feuert.
+- **Tage länger als der Abstand zweier Läufe wählen:** Mit Tagen = 1 und stündlichen Läufen flackert nichts; bei einem Lauf je Tag sollten es mindestens 2 Tage sein.
+
 - **Nur gesendete Projekte** (`quelle = api`). Per CSV angelegte Zeilen altern nie, und ein CSV-Upload zählt hier nicht als Lebenszeichen der Quelle.
 - **Quelle still:** Liegt der letzte Push länger zurück als die Warnfrist, wird zusätzlich nichts deaktiviert.
-- **Bremse:** Würde ein Lauf mehr als den eingestellten Anteil der aktiven Projekte deaktivieren (Standard 25 %), hält er an und alarmiert einmal. Vermutlich ist dann ein Lauf im Quellsystem abgebrochen. Die Seite zeigt das; nach einem vollständigen Lauf löst es sich von selbst.
+- **Nach einem Ausfall:** Eine Lücke von über 25 Stunden zwischen zwei Pushes gilt als Ausfall. Danach wird erst wieder deaktiviert, wenn das Quellsystem so viele Tage ohne solche Lücke gesendet hat, wie eingestellt sind. So zählt ein Ausfall nicht als Alter, auch wenn der erste Lauf danach abbricht. Eine Quelle mit einem Lauf je Tag bleibt mit Lücken um 24 Stunden durchgehend. Läuft sie seltener als alle 25 Stunden, beginnt die Zählung bei jedem Lauf neu, und es wird nie wegen Alters deaktiviert.
+- **Bremse:** Über einen Zeitraum (die eingestellten Tage plus einen) darf höchstens der eingestellte Anteil der gesendeten Projekte wegen Alters inaktiv werden (Standard 25 %). Gezählt wird alles in diesem Zeitraum Deaktivierte plus der aktuelle Durchgang, gegen den Stand zu Beginn des Zeitraums: So kommt auch ein Schwund in kleinen Scheiben nicht durch. Wäre es mehr, hält der Durchgang an, deaktiviert nichts und alarmiert einmal. CSV-Zeilen zählen nicht mit, sie altern nicht; ein zurückgekehrtes Projekt zählt nicht mehr. Erlaubt ist immer mindestens ein Projekt, damit ein kleiner Katalog nicht hängen bleibt; leer wird er dadurch nicht, weil ein gerade gesendetes Projekt nie veraltet ist. Die Seite zeigt den Halt. War der Lauf im Quellsystem abgebrochen, kommen die Projekte mit dem nächsten vollständigen Lauf zurück, und der Halt löst sich. Sind sie wirklich entfallen, bleibt er stehen, auch nach vollständigen Läufen. Ausweg: die Grenze einmal erhöhen, den nächsten stündlichen Durchgang abwarten und sie zurückstellen. Eine geänderte Grenze beginnt den Zeitraum neu.
 - Zuordnungen bleiben, das Audit nennt je Lauf die Anzahl in einer Zeile, wenn etwas deaktiviert oder angehalten wurde.
 
-**Protokoll:** Keine Audit-Zeile je Anfrage. Je Tag und Token schreibt der Job eine Zeile mit den Zählern, ohne das Token. Zähler, letzte Nutzung und letzte Synchronisation schreibt seatmeter gebündelt alle paar Sekunden; bei einem Absturz fehlen höchstens diese Sekunden in den Zählern, nicht die Projekte.
+**Protokoll:** Keine Audit-Zeile je Anfrage. Je Tag und Token schreibt der Job eine Zeile mit den Zählern, ohne das Token. Zähler, letzte Nutzung und letzte Synchronisation schreibt seatmeter gebündelt alle paar Sekunden; bei einem Absturz fehlen höchstens diese Sekunden in den Zählern, nicht die Projekte. Das gilt auch für Läufe, die nichts ändern.
 
 ## 2. CSV: Erstbestand und Läufe von Hand
 
@@ -113,7 +121,7 @@ P-300;Altes Projekt;;nein
 
 ### Abgelehnte Zeilen
 
-Probleme der **ganzen Datei** (Kodierung, Kopfzeile, Trennzeichen, Spaltenzuordnung, offenes Anführungszeichen, keine Projekte, mehr als 20 000 Zeilen oder 16 MB) lehnen sie ab: Antwort 400, nichts wird geändert.
+Probleme der **ganzen Datei** (Kodierung, Kopfzeile, auch ein Zeilenumbruch darin, Trennzeichen, Spaltenzuordnung, offenes Anführungszeichen, keine Projekte, mehr als 20 000 Zeilen oder 16 MB) lehnen sie ab: Antwort 400, nichts wird geändert.
 
 Eine **einzelne schlechte Zeile** lehnt nur diese Zeile ab, gültige Zeilen werden übernommen. Eine abgelehnte Zeile deaktiviert nie ein Projekt:
 
@@ -123,7 +131,7 @@ Eine **einzelne schlechte Zeile** lehnt nur diese Zeile ab, gültige Zeilen werd
 
 **Anführungszeichen:** Nur am Feldanfang beginnt ein Anführungszeichen einen Abschnitt, mitten im Feld ist es ein normales Zeichen (`5" Monitor`). Folgt auf das schließende Zeichen weiterer Text oder bleibt am Dateiende eines offen, wird die ganze Datei abgelehnt, weil dann unklar ist, wo die Zeilen enden.
 
-**Mehrzeiliger Text in einer Spalte, die nicht zählt**, ist erlaubt, etwa eine Beschreibung. Enthält eine spätere Zeile dieses Texts das Trennzeichen, kann ein verirrtes Anführungszeichen ganze CSV-Zeilen verschluckt haben: Die Zeile wird übernommen, aber es wird nichts deaktiviert. Die Antwort meldet `deaktivierung_uebersprungen: true` und in `hinweise` die Zeilennummer.
+**Mehrzeiliger Text in einer Spalte, die nicht zählt**, ist erlaubt, etwa eine Beschreibung. Sieht eine Zeile dieses Texts wie eine CSV-Zeile aus, hat sie also mindestens so viele Trennzeichen wie die Datei Spalten minus eins, kann ein verirrtes Anführungszeichen ganze Zeilen verschluckt haben: Die Zeile wird übernommen, aber es wird nichts deaktiviert. Die Antwort meldet `deaktivierung_uebersprungen: true` und in `hinweise` die Zeilennummer. Das trifft auch eine echte Beschreibung mit so vielen Trennzeichen; seatmeter kann sie nicht von einer verschluckten Zeile unterscheiden und deaktiviert darum lieber nichts. Abhilfe: das Trennzeichen wechseln oder die Spalte nicht mitliefern. Weniger Trennzeichen fallen nicht auf: Zwei verirrte Anführungszeichen können so eine einzelne Zeile verschlucken, ohne dass es erkannt wird. Prüfen Sie im Zweifel mit dem Trockenlauf, ob die Zähler stimmen.
 
 ### Zähler und Trockenlauf
 
@@ -153,7 +161,7 @@ curl --fail-with-body -sS -X POST \
   --data-binary @projekte.csv
 ```
 
-Parameter, alle optional: `trennzeichen` (`semikolon`, `komma`, `tab`, `pipe`), `spalte_id`, `spalte_name`, `spalte_nummer`, `spalte_kunde`, `spalte_aktiv`, `spalte_parent`, `trockenlauf=1`, `vollstaendig=0` für eine Teilliste. Unbekannte Parameter ergeben 400, damit ein Tippfehler bei `trockenlauf` nie zu einem echten Import wird. Ein Lauf mit abgelehnten Zeilen antwortet 200: Prüfen Sie im Job das Feld `abgelehnt`, zum Beispiel mit `jq -e '.abgelehnt == 0'`.
+Parameter, alle optional: `trennzeichen` (`semikolon`, `komma`, `tab`, `pipe`), `spalte_id`, `spalte_name`, `spalte_nummer`, `spalte_kunde`, `spalte_aktiv`, `spalte_parent`, `trockenlauf=1`, `vollstaendig=0` für eine Teilliste. Unbekannte Parameter ergeben 400, damit ein Tippfehler bei `trockenlauf` nie zu einem echten Import wird. Ein Lauf mit abgelehnten Zeilen oder übersprungenem Deaktivieren antwortet 200: Prüfen Sie im Job beide Felder, zum Beispiel mit `jq -e '.abgelehnt == 0 and .deaktivierung_uebersprungen == false'`. Das Deaktivieren kann auch ohne abgelehnte Zeile entfallen (`hinweise`).
 
 **CLI** auf dem Server, ohne Token:
 
@@ -176,8 +184,9 @@ Für Skripte, die schon JSON erzeugen, gibt es außerdem `POST /api/v1/projektka
 Projekte dürfen verschachtelt sein, zum Beispiel Arbeitspakete unter einem Projekt. Die Hierarchie kommt aus `parentId` (Push) bzw. der Spalte `parent` (CSV) oder dem Feld `parent` (JSON-Import) und verweist auf die externe ID.
 
 - **Jede Ebene ist wählbar**, auch ein Elternprojekt. Die Liste zeigt den Baum eingerückt, Eltern vor Kindern, Geschwister sortiert. Die gewählte Zuordnung zeigt den ganzen Pfad, zum Beispiel `Webshop › AP Login`.
-- **Suche:** Sie findet Nummer, Name und Kunde und lässt die Vorfahren eines Treffers als Kontext stehen; ein aktiver Vorfahre bleibt wählbar. Kinder eines Treffers erscheinen nur, wenn sie selbst passen.
-- **Inaktiv:** Ein aktives Kind unter einem inaktiven Elternprojekt bleibt wählbar; das Elternprojekt steht deaktiviert als Kontext darüber. Ein Elternprojekt zu deaktivieren ändert weder seine Kinder noch Zuordnungen.
+- **Suche:** Sie findet Nummer, Name und Kunde auch mitten im Wort, Groß-/Kleinschreibung egal; bei mehreren Wörtern müssen alle vorkommen, in beliebiger Reihenfolge. Die Vorfahren eines Treffers stehen als Kontext dabei, ein aktiver Vorfahre bleibt wählbar. Aktive Nachfahren eines Treffers erscheinen mit: Wer ein geschlossenes Projekt sucht, sieht seine offenen Arbeitspakete. Unter dem Kundenfilter bleiben Nachfahren ohne eigenen Kunden dabei, solche mit einem anderen Kunden nicht. Mehr als 100 Zeilen zeigt die Liste nicht, sie bittet dann um eine engere Suche.
+- **Inaktiv:** Ein aktives Kind unter einem inaktiven Elternprojekt bleibt wählbar; das Elternprojekt steht ausgegraut und nicht wählbar darüber, in der Standardansicht und in der Suche. Ein inaktiver Eintrag ohne Aktives darunter steht nirgends in der Auswahl, auch nicht in der Suche. Ein Elternprojekt zu deaktivieren ändert weder seine Kinder noch Zuordnungen.
+- **Reihenfolge:** Wurzeln nach Name, damit auch tausende Wurzeln bedienbar bleiben; Geschwister nach Nummer. Ein Elternprojekt, das nie gesendet wurde, macht sein Kind zur Wurzel.
 - **Schlechte Daten** brechen nichts: Ein unbekanntes Elternprojekt, ein Selbstbezug oder ein Zyklus ergibt die oberste Ebene, und ab 20 Ebenen beginnt eine neue Wurzel. Das Elternprojekt darf später ankommen.
 - **Kosten** bleiben flach je gewähltem Projekt, mit dem Pfad als Bezeichnung auf der Seite und in der CSV. Summen über ein Elternprojekt gibt es nicht; so zählt nichts doppelt.
 
@@ -239,7 +248,7 @@ docker compose -f deploy/compose.yml exec -T server \
 
 ### Was der Hook tut
 
-- **Er sendet nie den Prompt.** Übertragen werden nur die Sitzungs-ID und die Repo-URL ohne Zugangsdaten, an `POST /api/ingest/v1/projektwahl` auf dem Ingest-Host, mit dem Token aus den verwalteten Einstellungen.
+- **Er sendet nie den Prompt.** Übertragen werden nur die Sitzungs-ID und die Repo-URL ohne Zugangsdaten (in der scp-Form `nutzer@host:pfad` steht statt des Nutzers immer `git`, weil dort auch ein Token stehen kann), an `POST /api/ingest/v1/projektwahl` auf dem Ingest-Host, mit dem Token aus den verwalteten Einstellungen.
 - **Claude Code blockiert nie wegen seatmeter:** Ist der Server nicht erreichbar, antwortet er mit einem Fehler oder fehlt das Token, läuft der Prompt durch. Das Zeitlimit liegt bei zwei Sekunden.
 - **Kein Netzaufruf je Prompt:** Eine Marke in `~/.cache/seatmeter` (bzw. `$XDG_CACHE_HOME`) hält „zugeordnet“ einen Tag und „nicht erzwungen“ sowie „gewarnt“ eine Stunde. Sie gilt je Token, zwei Organisationen im selben Repo stören sich nicht. Ist der Cache-Ordner nicht beschreibbar, dient `$TMPDIR/seatmeter-<uid>`. Geht auch das nicht, zeigt die Stufe `warnen` nichts an, statt bei jedem Prompt zu warnen; `blockieren` wirkt unverändert.
 - **Die Prüf-Route schreibt nichts:** Wer das Mandanten-Token hat, kann darüber keine Zeilen anlegen. Die normalisierte URL steht signiert im Link, das Repo entsteht in seatmeter erst bei der Wahl oder der ersten Nutzung.
@@ -267,4 +276,4 @@ Quelle A allein reicht für die Zuordnung je Repo. Das kostet:
 
 ## Datenschutz
 
-Der Katalog enthält IDs, Projektnummern, Namen, Status und Kunden, keine Personen. Die Zuordnung hängt am Repo. Bei der Wahl über den Link speichert seatmeter nicht, welches Konto gewählt hat; das Audit nennt nur Repo und Projekt. Damit sich das nicht über die Uhrzeit erschließen lässt, schreibt seatmeter für Konten, die nur die Rolle `entwickler` haben, keinen Anmelde-Eintrag ins Audit und keine letzte Anmeldung in die Kontenliste; auch Anlegen und Rollenvergabe bei der ersten SSO-Anmeldung stehen ohne Konto im Audit. Das Anmeldeprotokoll dafür führt Ihr Identitätsanbieter. Prüfen Sie, ob Kundennamen im Dashboard für alle Rollen sichtbar sein dürfen, die die Seite „Projekte“ sehen. Die Sitzungs-ID der Wahl ohne Repo wird gelöscht, sobald auch die letzte Anfrage dieser Sitzung die Frist für Einzelanfragen überschritten hat.
+Der Katalog enthält IDs, Projektnummern, Namen, Status und Kunden, keine Personen. Die Zuordnung hängt am Repo. Bei der Wahl über den Link speichert seatmeter nicht, welches Konto gewählt hat; das Audit nennt nur Repo und Projekt. Damit sich das nicht über die Uhrzeit erschließen lässt, schreibt seatmeter für Konten, die nur die Rolle `entwickler` haben, keinen Anmelde-Eintrag ins Audit und keine letzte Anmeldung in die Kontenliste; auch Anlegen und Rollenvergabe bei der ersten SSO-Anmeldung stehen ohne Konto im Audit. Das Anmeldeprotokoll dafür führt Ihr Identitätsanbieter. **Grenze:** Handlungen eines Admins bleiben mit Konto im Audit, weil er sie offen vornimmt, also das Anlegen einer Einladung und eine von Hand vergebene Rolle. In einem kleinen Mandanten kann der zeitliche Abstand zwischen einer solchen Einladung und einer späteren Wahl darum einen Rückschluss auf die wählende Person erlauben. Über SSO angelegte Konten betrifft das nicht. Prüfen Sie, ob Kundennamen im Dashboard für alle Rollen sichtbar sein dürfen, die die Seite „Projekte“ sehen. Die Sitzungs-ID der Wahl ohne Repo wird gelöscht, sobald auch die letzte Anfrage dieser Sitzung die Frist für Einzelanfragen überschritten hat.

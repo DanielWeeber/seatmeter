@@ -28,11 +28,23 @@ export function katalogPfadText(pfad: readonly string[]): string {
 
 const SORTIERUNG = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
+const idVergleich = (a: KatalogBaumKnoten, b: KatalogBaumKnoten) =>
+  a.externe_id < b.externe_id ? -1 : a.externe_id > b.externe_id ? 1 : 0;
+
 function vergleich(a: KatalogBaumKnoten, b: KatalogBaumKnoten): number {
   return (
     SORTIERUNG.compare(a.nummer, b.nummer) ||
     SORTIERUNG.compare(a.name, b.name) ||
-    (a.externe_id < b.externe_id ? -1 : a.externe_id > b.externe_id ? 1 : 0)
+    idVergleich(a, b)
+  );
+}
+
+/** Wurzeln nach Name: Bei tausenden Wurzeln sucht man den Namen, nicht die Nummer. */
+function wurzelVergleich(a: KatalogBaumKnoten, b: KatalogBaumKnoten): number {
+  return (
+    SORTIERUNG.compare(a.name, b.name) ||
+    SORTIERUNG.compare(a.nummer, b.nummer) ||
+    idVergleich(a, b)
   );
 }
 
@@ -64,7 +76,7 @@ function elternAufloesen<T extends KatalogBaumKnoten>(je: ReadonlyMap<string, T>
   return eltern;
 }
 
-/** Baumreihenfolge: Eltern vor Kindern, Geschwister stabil nach Nummer, Name und ID. */
+/** Baumreihenfolge: Eltern vor Kindern, Wurzeln nach Name, Geschwister stabil nach Nummer, Name und ID. */
 export function katalogBaumBauen<T extends KatalogBaumKnoten>(
   projekte: readonly T[],
 ): KatalogBaumZeile<T>[] {
@@ -82,7 +94,7 @@ export function katalogBaumBauen<T extends KatalogBaumKnoten>(
       else kinder.set(e, [p]);
     }
   }
-  wurzeln.sort(vergleich);
+  wurzeln.sort(wurzelVergleich);
   const zeilen: KatalogBaumZeile<T>[] = [];
   const stapel: KatalogBaumZeile<T>[] = [];
   for (let i = wurzeln.length - 1; i >= 0; i--) {
@@ -109,17 +121,37 @@ export function katalogBaumBauen<T extends KatalogBaumKnoten>(
   return zeilen;
 }
 
-export type KatalogBaumTreffer<T> = KatalogBaumZeile<T> & { treffer: boolean };
+export type KatalogBaumTreffer<T> = KatalogBaumZeile<T> & {
+  /** Teil des Ergebnisses: passt selbst oder liegt unter einem Treffer. `false` = Vorfahre, nur Kontext. */
+  treffer: boolean;
+};
 
-/** Treffer plus ihre Vorfahren als Kontext, in Baumreihenfolge; `treffer` unterscheidet beide. O(n). */
-export function katalogBaumFiltern<T>(
+/**
+ * Was die Auswahl zeigt, in Baumreihenfolge, O(n). Ein Treffer zeigt seine Vorfahren als Kontext und alles darunter, das
+ * zu Aktivem führt: Sucht jemand ein geschlossenes Projekt, sieht er dessen offene Arbeitspakete. Ein inaktiver Eintrag
+ * bleibt nur, wenn etwas Aktives darunter liegt, auch in der Suche; sonst führt er zu nichts Wählbarem.
+ * `erbt`: Darf ein Nachfahre von seinem Treffer übernommen werden? Ein abgelehnter Nachfahre gibt das nicht weiter.
+ */
+export function katalogBaumFiltern<T extends { aktiv: boolean }>(
   zeilen: readonly KatalogBaumZeile<T>[],
   trifft: (projekt: T) => boolean,
+  erbt: (projekt: T) => boolean = () => true,
 ): KatalogBaumTreffer<T>[] {
-  const behalten = new Uint8Array(zeilen.length);
-  const treffer = new Uint8Array(zeilen.length);
-  zeilen.forEach((z, i) => {
-    if (!trifft(z.projekt)) return;
+  const n = zeilen.length;
+  const fuehrtZuAktivem = new Uint8Array(n);
+  // Eltern stehen vor ihren Kindern, rückwärts ist jedes Kind schon bewertet.
+  for (let i = n - 1; i >= 0; i--) {
+    const z = zeilen[i]!;
+    if (z.projekt.aktiv) fuehrtZuAktivem[i] = 1;
+    if (fuehrtZuAktivem[i] === 1 && z.elternIndex !== null) fuehrtZuAktivem[z.elternIndex] = 1;
+  }
+  const behalten = new Uint8Array(n);
+  const treffer = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (fuehrtZuAktivem[i] === 0) continue;
+    const z = zeilen[i]!;
+    const geerbt = z.elternIndex !== null && treffer[z.elternIndex] === 1 && erbt(z.projekt);
+    if (!geerbt && !trifft(z.projekt)) continue;
     treffer[i] = 1;
     // Über den echten Elternindex: Die Tiefe allein stimmte nach der Tiefengrenze nicht mehr.
     let j: number | null = i;
@@ -127,7 +159,7 @@ export function katalogBaumFiltern<T>(
       behalten[j] = 1;
       j = zeilen[j]!.elternIndex;
     }
-  });
+  }
   const ergebnis: KatalogBaumTreffer<T>[] = [];
   zeilen.forEach((z, i) => {
     if (behalten[i] === 1) ergebnis.push({ ...z, treffer: treffer[i] === 1 });
