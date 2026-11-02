@@ -12,6 +12,7 @@ import {
 } from '@seatmeter/shared';
 import { personKeyEmail, personKeyKonto, projektKey, pseudonym } from '@seatmeter/shared/hmac';
 import type { Datenbank } from '../db/schema.js';
+import { klarSchreiben } from '../person-klar.js';
 import type { MandantKontext } from './kontext.js';
 
 type Trx = Transaction<Datenbank>;
@@ -28,12 +29,17 @@ export interface PersonKennung {
   email: string | null;
 }
 
-/** Schlüssel einer Person, sofort gehasht (Rohwerte werden danach verworfen). */
+/** Schlüssel einer Person, sofort gehasht (Rohwerte werden danach verworfen, außer `emailKlar` für Klarnamen). */
 export interface PersonSchluessel {
   keyKonto: Buffer | null;
   keyEmail: Buffer | null;
   /** HMAC(account_id), nur Quelle A (Spalte `person.key_konto_id`, Abgleich ee). */
   keyKontoId?: Buffer | null;
+  /**
+   * Rohe E-Mail, nur im Speicher der laufenden Anfrage: wird in `personAufloesen` verschlüsselt in
+   * `person_klar` abgelegt, falls der Mandant Klarnamen aktiviert hat, sonst verworfen.
+   */
+  emailKlar?: string | null;
 }
 
 export function personSchluessel(personSalt: Uint8Array, k: PersonKennung): PersonSchluessel {
@@ -44,6 +50,7 @@ export function personSchluessel(personSalt: Uint8Array, k: PersonKennung): Pers
     keyKonto: konto ? personKeyKonto(personSalt, konto) : null,
     keyEmail: email ? personKeyEmail(personSalt, email) : null,
     keyKontoId: kontoId ? personKeyKonto(personSalt, kontoId) : null,
+    emailKlar: email ? email.trim() : null,
   };
 }
 
@@ -138,6 +145,9 @@ export async function personAufloesen(
     );
   }
   cache.set(cacheKey, person.id);
+  // Klarnamen: höchstens einmal je Person und Anfrage prüfen (Cache); geschrieben wird nur bei Änderung.
+  if (ctx.klarnamenAktiv && s.emailKlar)
+    await klarSchreiben(trx, ctx.masterKey, ctx.mandantId, person.id, { email: s.emailKlar });
   await nutzungstagPflegen(trx, person.id, tag);
   return person.id;
 }

@@ -27,7 +27,7 @@ Abgeschlossene Monate bleiben unberührt: `monatsabschluss` und `katalog_abschlu
 | `GET /api/v1/uebersicht?monat=JJJJ-MM` | alle | Tokens je Typ, Anfragen, Schatten, je Modell, Abdeckung A/B, gefilterte API-/Fremd-Org-Anfragen und verworfene Inhaltsereignisse (`ingest_statistik`) |
 | `GET /api/v1/projekte?monat=` | alle | `ProjekteAntwort` (`projekteAntwortSchema`): Liste mit Kennzahlen und Personenzahl; „unzugeordnet“ mit `id: null` |
 | `GET /api/v1/projekte/:id?monat=` | alle | `:id` = UUID oder `unzugeordnet`; je Modell, je Tag, Personen gemäß Stufe; Rollen ohne Personensicht bekommen `personen: null` + `personen_hinweis: "Rolle ohne Personensicht"` |
-| `GET /api/v1/personen?monat=` | mandanten_admin, projektleiter | Pseudonyme mit Monatssummen; Klarnamen nur bei `klarnamen_aktiv` und `person_klar`; andere Rollen 403 `{ code: "rolle_fehlt", fehler: "Rolle ohne Personensicht" }` |
+| `GET /api/v1/personen?monat=` | mandanten_admin, projektleiter | Pseudonyme mit Monatssummen; Klarnamen nur bei `klarnamen_aktiv` und vorhandener `person_klar`-Zeile (entschlüsselt gelesen; befüllt wird sie vom Ingest mit der Telemetrie-E-Mail, von Anmeldung und SCIM mit E-Mail und Name, siehe `person-klar.ts` und Architektur, Abschnitt „Klarnamen: Quellen und Lebenslauf“); andere Rollen 403 `{ code: "rolle_fehlt", fehler: "Rolle ohne Personensicht" }` |
 | `GET /api/v1/datenqualitaet?monat=` | alle | Abdeckung A/B, heuristisch, Abweichung A≠B, unzugeordnet, Modelle ohne Preis, `ingest_statistik` je Quelle, OTel-Kontrollsumme je Sitzung (Abweichung > 1 %) |
 
 Antworttypen: `@seatmeter/shared` (`Uebersicht`, `ProjekteAntwort`/`ProjektZeile`, `ProjektDetail`, `PersonenAntwort`, `Datenqualitaet`).

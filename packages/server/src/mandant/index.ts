@@ -6,6 +6,7 @@ import type { Transaction } from 'kysely';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
 import { benutzerVon, requireBenutzer, requireRolle } from '../auth/kontext.js';
 import { withMandant } from '../db/mandant.js';
+import { klarLoeschen, klarNachfuellen } from '../person-klar.js';
 import type { Datenbank } from '../db/schema.js';
 import type { SeatmeterPlugin } from '../plugin.js';
 import { registriereVerwaltungRouten } from './verwaltung-routen.js';
@@ -51,7 +52,7 @@ const vierStellen = (w: number) => Math.round(w * 10_000) / 10_000;
 
 export const mandantPlugin: SeatmeterPlugin = {
   name: 'kern-mandant',
-  routen(app, { db }) {
+  routen(app, { db, konfiguration }) {
     registriereVerwaltungRouten(app, db);
     app.get('/api/v1/mandant/einstellungen', { preHandler: requireBenutzer }, async (request) => {
       const a = benutzerVon(request);
@@ -86,6 +87,19 @@ export const mandantPlugin: SeatmeterPlugin = {
               benutzerId: a.benutzerId,
               aktion: AUDIT_AKTION.einstellungGeaendert,
               objekt: `mandant.${f}: ${String(alt[f])} → ${String(neu[f])}`,
+            });
+          }
+          // Klarnamen: beim Einschalten sofort aus vorhandenen Konten füllen, beim Ausschalten alle löschen.
+          if (geaendert.includes('klarnamen_aktiv')) {
+            const masterKey = konfiguration.SEATMETER_MASTER_KEY;
+            const an = neu.klarnamen_aktiv === true;
+            const n = an
+              ? await klarNachfuellen(trx, masterKey, a.mandantId)
+              : await klarLoeschen(trx, a.mandantId);
+            await protokolliere(trx, {
+              benutzerId: a.benutzerId,
+              aktion: AUDIT_AKTION.einstellungGeaendert,
+              objekt: `mandant.klarnamen_aktiv: ${n} Personen ${an ? 'befüllt' : 'gelöscht'}`,
             });
           }
           return ladeEinstellungen(trx);

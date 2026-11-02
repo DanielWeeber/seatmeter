@@ -15,6 +15,10 @@ export interface MandantKontext extends MandantSalts {
   orgs: Set<string>;
   /** Positivliste der Projektschlüssel für Issue-Schlüssel (`mandant.issue_praefixe`); `null` = alle. */
   issuePraefixe: string[] | null;
+  /** `mandant.klarnamen_aktiv`: dann wird die E-Mail aus der Telemetrie verschlüsselt in `person_klar` abgelegt. */
+  klarnamenAktiv: boolean;
+  /** Für die Verschlüsselung der Klarnamen (nur im Speicher, nie protokolliert). */
+  masterKey: Buffer;
 }
 
 export async function mandantKontextLaden(
@@ -24,7 +28,7 @@ export async function mandantKontextLaden(
 ): Promise<MandantKontext> {
   const mandant = await trx
     .selectFrom('mandant')
-    .select(['zeitzone', 'aufbewahrung_anfrage_tage', 'issue_praefixe'])
+    .select(['zeitzone', 'aufbewahrung_anfrage_tage', 'issue_praefixe', 'klarnamen_aktiv'])
     .where('id', '=', mandantId)
     .executeTakeFirstOrThrow();
   const orgs = await trx
@@ -39,6 +43,8 @@ export async function mandantKontextLaden(
     aufbewahrungTage: mandant.aufbewahrung_anfrage_tage,
     orgs: new Set(orgs.map((o) => o.org_uuid.toLowerCase())),
     issuePraefixe: mandant.issue_praefixe,
+    klarnamenAktiv: mandant.klarnamen_aktiv,
+    masterKey,
     ...salts,
   };
 }

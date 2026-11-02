@@ -26,6 +26,7 @@ import { domainAusEmail, mandantZurDomain } from '../konten/domains.js';
 import type { Konfiguration } from '../config.js';
 import { verwaltung } from '../mandant/verwaltung.js';
 import type { SeatmeterPlugin } from '../plugin.js';
+import { klarNachAnmeldung } from '../person-klar.js';
 import { registriereKonfigurationRouten } from './konfiguration-routen.js';
 import {
   DiscoveryCache,
@@ -382,6 +383,15 @@ export const oidcPlugin: SeatmeterPlugin = {
           'oidc',
           mandant.mandantId,
         );
+        await klarNachAnmeldung(
+          db,
+          masterKey,
+          ergebnis.benutzer.id,
+          claims,
+          ergebnis.benutzer.benutzername,
+          request.log,
+          [mandant.mandantId],
+        );
         return reply.redirect(zustand.ziel, 302);
       }
 
@@ -402,6 +412,14 @@ export const oidcPlugin: SeatmeterPlugin = {
           v,
         );
       }
+      await klarNachAnmeldung(
+        db,
+        masterKey,
+        benutzer.id,
+        claims,
+        benutzer.benutzername,
+        request.log,
+      );
       await erstelleSitzung(app.seatmeterAuth, reply, benutzer, 'oidc');
       return reply.redirect(zustand.ziel, 302);
     });

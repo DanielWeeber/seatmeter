@@ -9,6 +9,7 @@ import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import { TokenEimer } from '../ingest-gemeinsam/ratenlimit.js';
 import { sha256 } from '../krypto.js';
+import { anzeigenameAus, klarAbgleichen, klarnamenAktiv } from '../person-klar.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { sql } from 'kysely';
 import { z } from 'zod';
@@ -119,7 +120,41 @@ async function aktivSetzen(
   await scimRollenAbgleichen(v, trx, benutzerId, await zuordnungLaden(trx));
 }
 
+/** Anzeigename aus einem SCIM-Körper: `displayName`, sonst `name.formatted`, sonst Vor- und Nachname. */
+function scimName(body: Record<string, unknown>): string | null {
+  const text = (w: unknown) => (typeof w === 'string' ? w : null);
+  const n =
+    body.name && typeof body.name === 'object' ? (body.name as Record<string, unknown>) : {};
+  return (
+    anzeigenameAus([text(body.displayName)]) ??
+    anzeigenameAus([text(n.formatted)]) ??
+    anzeigenameAus([text(n.givenName), text(n.familyName)])
+  );
+}
+
+/**
+ * Klarnamen (nur bei `klarnamen_aktiv`): userName (= E-Mail) und Name des SCIM-Benutzers in `person_klar`
+ * der passenden Person eintragen; legt nie eine Person an. Der Name wird sonst nirgends gespeichert.
+ */
+async function klarnameUebernehmen(
+  trx: Trx,
+  masterKey: Buffer,
+  mandantId: string,
+  benutzerId: string,
+  name: string | null,
+) {
+  if (!(await klarnamenAktiv(trx))) return;
+  const b = await trx
+    .selectFrom('benutzer')
+    .select('benutzername')
+    .where('id', '=', benutzerId)
+    .executeTakeFirst();
+  if (b?.benutzername.includes('@'))
+    await klarAbgleichen(trx, masterKey, mandantId, { email: b.benutzername, name });
+}
+
 interface UserAenderung {
+  name?: string | null;
   userName?: string;
   externalId?: string | null;
   active?: boolean;
@@ -198,6 +233,7 @@ export function registriereScimRouten(
   konfiguration: Konfiguration,
 ): void {
   const kontexte = new WeakMap<FastifyRequest, ScimKontext>();
+  const masterKey = konfiguration.SEATMETER_MASTER_KEY;
   const v = verwaltung(app.seatmeterAuth);
   const eimer = new TokenEimer();
   const fehlversuche = new Ratenbegrenzer(30, 15 * 60_000);
@@ -529,6 +565,7 @@ export function registriereScimRouten(
             })
             .execute();
           await aktivSetzen(v, trx, id, aktiv, fremd);
+          await klarnameUebernehmen(trx, masterKey, k.mandantId, id, scimName(body));
           return userLesen(trx, id, basis);
         });
         void reply.header('location', r.meta.location);
@@ -550,10 +587,12 @@ export function registriereScimRouten(
               }
             : {}),
           ...(body.active !== undefined ? { active: alsBoolean(body.active) } : {}),
+          name: scimName(body),
         };
         const fremd = await mehrereMandanten(v, db, id, k.mandantId);
         const r = await withMandant(db, k.mandantId, async (trx) => {
           await userAendern(v, trx, id, aenderung, fremd);
+          await klarnameUebernehmen(trx, masterKey, k.mandantId, id, aenderung.name ?? null);
           return userLesen(trx, id, basis);
         });
         return scimSenden(reply, 200, r);
@@ -581,8 +620,20 @@ export function registriereScimRouten(
             aenderung.externalId = op === 'remove' ? null : alsText(wert, 'externalId');
           } else if (a === 'active' && !p.filter) {
             if (op !== 'remove') aenderung.active = alsBoolean(wert);
+          } else if (!p.filter && op !== 'remove') {
+            // Namen speichert seatmeter nicht; sie gehen nur verschlüsselt in `person_klar` (Klarnamen).
+            if (a === 'displayname' && typeof wert === 'string')
+              aenderung.name = scimName({ displayName: wert });
+            else if (a === 'name' && !p.sub && wert && typeof wert === 'object')
+              aenderung.name = scimName({ name: wert });
+            else if (
+              a === 'name' &&
+              p.sub?.toLowerCase() === 'formatted' &&
+              typeof wert === 'string'
+            )
+              aenderung.name = scimName({ name: { formatted: wert } });
           }
-          // Alle übrigen Attribute (Namen, E-Mails, Titel, Enterprise-Erweiterung) speichert seatmeter nicht.
+          // Alle übrigen Attribute (E-Mails, Titel, Enterprise-Erweiterung) speichert seatmeter nicht.
         };
         for (const o of patchOperationen(request.body)) {
           if (o.path) setze(o.path, o.value, o.op, false);
@@ -596,6 +647,7 @@ export function registriereScimRouten(
         const fremd = await mehrereMandanten(v, db, id, k.mandantId);
         const r = await withMandant(db, k.mandantId, async (trx) => {
           await userAendern(v, trx, id, aenderung, fremd);
+          await klarnameUebernehmen(trx, masterKey, k.mandantId, id, aenderung.name ?? null);
           return userLesen(trx, id, basis);
         });
         return scimSenden(reply, 200, r);

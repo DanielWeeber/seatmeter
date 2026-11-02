@@ -9,6 +9,8 @@ Einstellungen des aktiven Mandanten (Architektur §3.1 `mandant`, §5, §7) und 
 
 `code_anteil_sitz` und `schatten_faktor` werden auf 4 Nachkommastellen gerundet (Spalten `numeric(6,4)`).
 Die Lese-Route `GET /api/v1/auth/mandant` (Modul `auth`) bleibt für Name, Plan und Aufbewahrungsfristen.
+Klarnamen (`klarnamen_aktiv`): Beim Einschalten füllt `PUT /einstellungen` sofort `person_klar` (E-Mail) aus den vorhandenen Dashboard- und SCIM-Konten, deren E-Mail zu einer Person passt; weitere Einträge folgen mit der nächsten Telemetrie-Anfrage (E-Mail), Anmeldung (Name, E-Mail) und dem nächsten SCIM-Abgleich. Beim Ausschalten löscht dieselbe Transaktion alle `person_klar`-Zeilen des Mandanten. Das Audit nennt nur die Zahl (`mandant.klarnamen_aktiv: N Personen befüllt|gelöscht`).
+
 Änderungen an Auswertungsstufe, Mindestgruppe und Klarnamen sind mitbestimmungspflichtig (Architektur §10.5); der Betriebsrats-Bericht listet sie im Abschnitt Konfiguration.
 
 ## Selbstverwaltung (`/api/v1/mandant/…`)
