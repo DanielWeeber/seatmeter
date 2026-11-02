@@ -16,12 +16,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ORDNER_NORMALISIEREN,
   PROJEKTWAHL_PRUEF_PFAD,
   PROJEKTWAHL_TOKEN_VARIABLE,
   projektwahlHookBefehl,
   projektwahlHookEinstellung,
 } from './projektwahl-hook.js';
-import { normalisiereRepoUrl } from './repo-url.js';
+import { normalisiereRepoUrl, ordnerSchluesselPruefen } from './repo-url.js';
 
 const PROMPT = 'GEHEIMER-PROMPT mit "session_id":"gefaelscht" und $(touch /tmp/nie)';
 const TOKEN = 'smi_test-Token_0123456789';
@@ -63,6 +64,10 @@ function lauf(
     env?: Record<string, string>;
     befehl?: string;
     stdin?: string;
+    /** Eigener Nachbau von git (Inhalt des Skripts) statt des Remote-Nachbaus. */
+    git?: string;
+    /** Arbeitsordner des Hooks (Standard: der Testordner, der auch HOME ist). */
+    cwd?: string;
   } = {},
 ): Lauf {
   const antwort = join(ordner, 'antwort');
@@ -78,7 +83,8 @@ ${o.curlFehler ? 'exit 7' : `cat '${antwort}'`}
     o.remote === undefined ? 'https://nutzer:geheim@git.example.org/o/r.git' : o.remote;
   ausfuehrbar(
     join(bin, 'git'),
-    remote === null ? '#!/bin/bash\nexit 2\n' : `#!/bin/bash\nprintf '%s\\n' '${remote}'\n`,
+    o.git ??
+      (remote === null ? '#!/bin/bash\nexit 2\n' : `#!/bin/bash\nprintf '%s\\n' '${remote}'\n`),
   );
   const r = spawnSync(
     'bash',
@@ -86,7 +92,7 @@ ${o.curlFehler ? 'exit 7' : `cat '${antwort}'`}
     {
       input: o.stdin ?? eingabe(),
       encoding: 'utf8',
-      cwd: ordner,
+      cwd: o.cwd ?? ordner,
       env: {
         PATH: `${bin}:${process.env.PATH ?? ''}`,
         HOME: ordner,
@@ -479,6 +485,182 @@ describe('Hook der Projektwahl', () => {
     const b = projektwahlHookBefehl({ ingestUrl: "https://a.example.org/x'y/" });
     expect(b).toContain(`'https://a.example.org/x'\\''y${PROJEKTWAHL_PRUEF_PFAD}'`);
     expect(b).not.toContain('eval');
+  });
+
+  describe('Ordner ohne Git-Remote', () => {
+    /** git-Nachbauten: kein Repo, Repo ohne Remote, Repo mit lokalem Remote, fremder Besitzer (safe.directory). */
+    const GIT_KEIN_REPO = `#!/bin/bash
+case "$1" in rev-parse) echo 'fatal: not a git repository (or any of the parent directories): .git' >&2 ;; esac
+exit 128
+`;
+    const GIT_OHNE_REMOTE = `#!/bin/bash
+case "$1 $2" in "rev-parse "*) echo .git ;; "remote get-url") echo "error: No such remote 'origin'" >&2; exit 2 ;; "remote ") ;; esac
+exit 0
+`;
+    const GIT_LOKALES_REMOTE = `#!/bin/bash
+case "$1 $2" in "rev-parse "*) echo .git ;; "remote get-url") echo /srv/git/r.git ;; "remote ") echo origin ;; esac
+exit 0
+`;
+    const GIT_FREMD = `#!/bin/bash
+echo "fatal: detected dubious ownership in repository at '$PWD'" >&2
+exit 128
+`;
+    const ordnerIn = (curl: string) => /\[ordner=([^\]]*)\]/.exec(curl)?.[1];
+    const unter = (...teile: string[]) => {
+      const p = join(ordner, ...teile);
+      mkdirSync(p, { recursive: true });
+      return p;
+    };
+
+    it('kein Repo im Home-Ordner: Pfad relativ zum Home-Ordner, nie absolut, Marke je Ordner und Sitzung', () => {
+      const cwd = unter('Claude', 'arbeit', 'code', 'angebot 2026');
+      const r = lauf({ git: GIT_KEIN_REPO, cwd, antwort: 'frei\n' });
+      expect(r.curl).toContain('[repo=]');
+      expect(ordnerIn(r.curl)).toBe('local-Claude/arbeit/code/angebot 2026');
+      expect(r.curl).not.toContain(ordner);
+      expect(r.curl).not.toContain(tmpdir());
+      expect(readdirSync(join(ordner, '.cache', 'seatmeter'))[0]).toMatch(
+        /^o\d+-\d+-sitzung-123\.frei$/,
+      );
+      // Neue Sitzung im selben Ordner meldet ihn erneut (sonst fehlte ihre Nutzung); dieselbe Sitzung nicht.
+      expect(lauf({ git: GIT_KEIN_REPO, cwd }).curl.match(/ARGS:/g)).toHaveLength(1);
+      const neu = lauf({ git: GIT_KEIN_REPO, cwd, stdin: eingabe('andere') });
+      expect(neu.curl.match(/ARGS:/g)).toHaveLength(2);
+    });
+
+    it('Stufe aus: nur melden, nichts fragen; blockieren und warnen wie bei Repos', () => {
+      const cwd = unter('notizen');
+      const aus = lauf({ git: GIT_KEIN_REPO, cwd, antwort: 'frei\n' });
+      expect(aus.stdout).toBe('');
+      expect(ordnerIn(aus.curl)).toBe('local-notizen');
+      rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+      const block = lauf({
+        git: GIT_KEIN_REPO,
+        cwd,
+        antwort: 'waehlen https://x.example.org/projektwahl/a\n',
+        stdin: eingabe('zwei'),
+      });
+      expect((JSON.parse(block.stdout) as { decision: string }).decision).toBe('block');
+    });
+
+    it('im Home-Ordner selbst `local-~`; der Name des Home-Ordners geht nie mit', () => {
+      const r = lauf({ git: GIT_KEIN_REPO });
+      expect(ordnerIn(r.curl)).toBe('local-~');
+      expect(r.curl).not.toContain(ordner.split('/').pop() ?? '');
+    });
+
+    it('Repo ohne jedes Remote zählt als Ordner', () => {
+      const r = lauf({ git: GIT_OHNE_REMOTE, cwd: unter('code', 'skript') });
+      expect(r.curl).toContain('[repo=]');
+      expect(ordnerIn(r.curl)).toBe('local-code/skript');
+    });
+
+    it('außerhalb des Home-Ordners nur der letzte Ordnername', () => {
+      const aussen = mkdtempSync(join(tmpdir(), 'aussen-'));
+      try {
+        const cwd = join(aussen, 'kunde-x', 'projekt-y');
+        mkdirSync(cwd, { recursive: true });
+        const r = lauf({ git: GIT_KEIN_REPO, cwd });
+        expect(ordnerIn(r.curl)).toBe('local-projekt-y');
+        expect(r.curl).not.toContain('kunde-x');
+        expect(r.curl).not.toContain(aussen);
+      } finally {
+        rmSync(aussen, { recursive: true, force: true });
+      }
+    });
+
+    it('außerhalb des Home-Ordners kein Benutzername als Ordnername (WSL, sudo)', () => {
+      const aussen = mkdtempSync(join(tmpdir(), 'aussen-'));
+      try {
+        for (const [name, env] of [
+          ['Erika', { USER: 'erika' }],
+          ['MaxM', { LOGNAME: 'maxm' }],
+          ['jdoe', { USERNAME: 'JDOE' }],
+        ] as const) {
+          const cwd = join(aussen, name);
+          mkdirSync(cwd, { recursive: true });
+          rmSync(protokoll, { force: true });
+          rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+          const r = lauf({ git: GIT_KEIN_REPO, cwd, env });
+          expect(r.status, name).toBe(0);
+          expect(ordnerIn(r.curl), name).toBe('');
+          expect(r.curl, name).not.toContain(name);
+        }
+      } finally {
+        rmSync(aussen, { recursive: true, force: true });
+      }
+    });
+
+    it('„kein Repo“ zählt nur am Anfang der Meldung von git', () => {
+      const cwd = unter('not a git repository');
+      const r = lauf({
+        cwd,
+        git: `#!/bin/bash
+echo "fatal: detected dubious ownership in repository at '$PWD'" >&2
+exit 128
+`,
+      });
+      expect(ordnerIn(r.curl)).toBe('');
+      expect(r.curl).not.toContain('not a git');
+    });
+
+    it('HOME mit abschließendem Schrägstrich, doppelten Schrägstrichen oder über einen Link', () => {
+      const cwd = unter('a', 'b');
+      for (const home of [`${ordner}/`, `${ordner}//`, ordner.replace(/\//g, '//')]) {
+        rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+        rmSync(protokoll, { force: true });
+        const r = lauf({ git: GIT_KEIN_REPO, cwd, env: { HOME: home } });
+        expect(ordnerIn(r.curl), home).toBe('local-a/b');
+      }
+      const link = join(temp, 'home-link');
+      symlinkSync(ordner, link);
+      rmSync(protokoll, { force: true });
+      rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+      const r = lauf({
+        git: GIT_KEIN_REPO,
+        cwd,
+        env: { HOME: link, XDG_CACHE_HOME: join(ordner, '.cache') },
+      });
+      expect(ordnerIn(r.curl)).toBe('local-a/b');
+    });
+
+    it('Windows (Git Bash): Laufwerk, Backslashes und Schrägstrich am Ende werden gleich', () => {
+      const w = (eingabe: string) =>
+        spawnSync('bash', ['-c', `${ORDNER_NORMALISIEREN}\nw "$1"`, 'w', eingabe], {
+          encoding: 'utf8',
+        }).stdout;
+      expect(w('C:\\Users\\x\\')).toBe('/c/Users/x');
+      expect(w('C:/Users/x/code')).toBe('/c/Users/x/code');
+      expect(w('/c/Users/x/')).toBe('/c/Users/x');
+      expect(w('/C/Users/x')).toBe('/c/Users/x');
+      expect(w('/home/x//code/')).toBe('/home/x/code');
+      expect(w('/')).toBe('/');
+    });
+
+    it('mit Remote kein Pfad: Repo-URL, lokales Remote, fremder Besitzer, HOME leer oder /', () => {
+      const cwd = unter('code', 'geheim-kunde');
+      const faelle: { name: string; o: Parameters<typeof lauf>[0] }[] = [
+        { name: 'Repo-URL', o: { cwd } },
+        { name: 'lokales Remote', o: { cwd, git: GIT_LOKALES_REMOTE } },
+        { name: 'fremder Besitzer', o: { cwd, git: GIT_FREMD } },
+        { name: 'HOME leer', o: { cwd, git: GIT_KEIN_REPO, env: { HOME: '' } } },
+        { name: 'HOME /', o: { cwd, git: GIT_KEIN_REPO, env: { HOME: '/' } } },
+      ];
+      for (const f of faelle) {
+        rmSync(protokoll, { force: true });
+        rmSync(join(ordner, '.cache'), { recursive: true, force: true });
+        const r = lauf(f.o);
+        expect(r.status, f.name).toBe(0);
+        expect(r.curl, f.name).not.toContain('geheim-kunde');
+        if (r.curl) expect(ordnerIn(r.curl), f.name).toBe('');
+      }
+    });
+
+    it('was der Hook sendet, nimmt der Server an', () => {
+      for (const k of ['local-~', 'local-notizen', 'local-Claude/arbeit/code/angebot 2026']) {
+        expect(ordnerSchluesselPruefen(k)).toBe(k);
+      }
+    });
   });
 
   it('Einstellung: UserPromptSubmit, Befehl, Zeitlimit', () => {

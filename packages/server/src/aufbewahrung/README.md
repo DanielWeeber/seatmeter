@@ -11,5 +11,6 @@ Job `aufbewahrung.loeschen` (`45 2 * * *` UTC), Fristen aus `mandant.aufbewahrun
 | `ingest_statistik` | nach `aufbewahrung_statistik_monate` |
 | `audit` | nach `aufbewahrung_audit_monate` |
 | `benutzer_sitzung`, `job_lauf` | abgelaufene Sitzungen; Job-Läufe älter als 90 Tage |
+| `sitzung_katalog`, `sitzung_ordner` | Wahl je Sitzung bzw. Ordner der Sitzung: erst, wenn die Zeile älter als die Frist für Einzelanfragen ist und keine Anfrage der Sitzung mehr existiert; das Ordner-Projekt bleibt |
 
 Jeder Lauf schreibt je Mandant und Tabelle eine Zeile in `loeschlauf` (Tabelle, Grenze `bis`, Anzahl, auch 0) für den Betriebsrats-Bericht. `aufbewahrungJob(ctx, jetzt)` nimmt den Stichtag für Tests.

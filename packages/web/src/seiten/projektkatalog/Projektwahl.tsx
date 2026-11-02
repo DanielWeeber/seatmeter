@@ -64,6 +64,11 @@ function Wahl({ token, d }: { token: string; d: ProjektwahlAntwort }) {
             Zu welchem Projekt gehört das Repo <strong>{d.ziel.name}</strong>? Die Wahl gilt danach
             für alle in diesem Repo.
           </>
+        ) : d.ziel.art === 'ordner' ? (
+          <>
+            Zu welchem Projekt gehört der <strong>{d.ziel.name}</strong> (ohne Git-Remote)? Die Wahl
+            gilt danach für alle Sitzungen in diesem Ordner.
+          </>
         ) : (
           'Diese Sitzung läuft in einem Ordner ohne Repo. Die Wahl gilt nur für diese Sitzung.'
         )}

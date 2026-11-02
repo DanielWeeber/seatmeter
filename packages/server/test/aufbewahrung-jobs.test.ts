@@ -232,6 +232,29 @@ describe('Aufbewahrung (Architektur §3.5)', () => {
         })),
       )
       .execute();
+    // Ordner ohne Git-Remote: dieselbe Regel für `sitzung_ordner`; das Ordner-Projekt bleibt.
+    const ordnerProjekt = await db
+      .insertInto('projekt')
+      .values({
+        mandant_id: mandant,
+        projekt_key: Buffer.from(randomUUID()),
+        url_norm: 'local-code/beispiel',
+        provider: 'pfad',
+        anzeigename: 'Ordner code/beispiel',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('sitzung_ordner')
+      .values(
+        ['s-laeuft-weiter', 's-vorbei'].map((session_id) => ({
+          mandant_id: mandant,
+          session_id,
+          projekt_id: ordnerProjekt.id,
+          erstellt: new Date('2025-01-20T10:00:00Z'),
+        })),
+      )
+      .execute();
     await db
       .insertInto('anfrage')
       .values({
@@ -255,9 +278,18 @@ describe('Aufbewahrung (Architektur §3.5)', () => {
           .where('mandant_id', '=', mandant)
           .execute()
       ).map((z) => z.session_id);
+    const ordnerSitzungen = async () =>
+      (
+        await db
+          .selectFrom('sitzung_ordner')
+          .select('session_id')
+          .where('mandant_id', '=', mandant)
+          .execute()
+      ).map((z) => z.session_id);
 
     await aufbewahrungJob(ctx, JETZT);
     expect(await sitzungen()).toEqual(['s-laeuft-weiter']);
+    expect(await ordnerSitzungen()).toEqual(['s-laeuft-weiter']);
 
     // Läuft auch diese Anfrage ab, geht die Zuordnung mit.
     await db
@@ -267,5 +299,12 @@ describe('Aufbewahrung (Architektur §3.5)', () => {
       .execute();
     await aufbewahrungJob(ctx, JETZT);
     expect(await sitzungen()).toEqual([]);
+    expect(await ordnerSitzungen()).toEqual([]);
+    const projekt = await db
+      .selectFrom('projekt')
+      .select('id')
+      .where('id', '=', ordnerProjekt.id)
+      .executeTakeFirst();
+    expect(projekt).toBeDefined();
   });
 });

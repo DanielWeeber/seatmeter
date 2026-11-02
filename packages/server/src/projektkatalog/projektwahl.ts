@@ -2,11 +2,17 @@
 // Text, damit der Hook ohne jq auskommt) und die Auswahlseite hinter dem signierten Link (Anmeldung Pflicht).
 // Der Hook sendet nie den Prompt. Die erste Wahl gilt; ändern dürfen danach nur Admin und Projektleitung
 // (Routen in `routen.ts`). Im Audit steht bei der Wahl kein Konto, damit daraus kein Personenbezug zur Arbeit
-// an einem Repo entsteht. Die Prüf-Route schreibt nichts: Wer das für alle lesbare Mandanten-Token hat, kann keine
-// Zeilen anlegen. Die normalisierte URL steht signiert im Link, das seatmeter-Projekt entsteht erst bei der Wahl.
+// an einem Repo entsteht. Für Repos schreibt die Prüf-Route nichts: Die normalisierte URL steht signiert im Link, das
+// seatmeter-Projekt entsteht erst bei der Wahl. Einzige Ausnahme sind Ordner ohne Git-Remote (Schlüssel `local-…`): Deren
+// Projekt und die Zuordnung der Sitzung legt die Prüf-Route in jeder Stufe an, auch bei `aus`, weil die Telemetrie keinen
+// Pfad kennt und die Nutzung sonst nie einem Ordner zuzurechnen wäre. Das kann mit dem Token nicht mehr als der Ingest
+// selbst, der Projekte zu beliebigen Repo-URLs anlegt; die Wahl gilt dann je Ordner wie bei einem Repo.
 import {
   fehlerKoerper,
+  istOrdnerSchluessel,
   kanonischeRepoInfo,
+  ordnerAnzeigename,
+  ordnerSchluesselPruefen,
   projektwahlEingabeSchema,
   PROJEKTWAHL_PFAD_PRAEFIX,
   PROJEKTWAHL_PRUEF_PFAD,
@@ -34,14 +40,17 @@ import type { PluginKontext } from '../plugin.js';
 import { aktiveProjekte, katalogProjektLaden, projekteLaden, type KatalogTrx } from './daten.js';
 import { linkTokenErzeugen, linkTokenPruefen, type LinkInhalt } from './link.js';
 import { AUDIT_KATALOG } from './audit.js';
+import { ordnerNeuaufbauStarten, ordnerSitzungMerken } from './ordner.js';
 import { projektwahlHinderung } from './stufe.js';
 
-/** Körpergrenze der Prüf-Route: nur Sitzungs-ID und Repo-URL. */
-const PRUEF_KOERPER_MAX = 4096;
+/** Körpergrenze der Prüf-Route: Sitzungs-ID, Repo-URL und Ordner-Schlüssel (URL-kodiert, Umlaute brauchen Platz). */
+const PRUEF_KOERPER_MAX = 16_384;
 
 const pruefSchema = z.object({
   sitzung: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
   repo: z.string().max(1000).optional(),
+  /** Nur ohne Git-Remote; ein ungültiger Schlüssel zählt wie keiner (Wahl je Sitzung wie bisher). */
+  ordner: z.string().max(8000).optional(),
 });
 
 /** Nur lesen: Projekt-ID zur normalisierten URL; `null`, solange das Repo in seatmeter unbekannt ist. */
@@ -96,6 +105,28 @@ export async function projektwahlPruefRoute(
       const e = pruefSchema.safeParse(anfrage.body);
       if (!e.success) return ant.code(400).send({ fehler: 'Anfrage ungültig' });
       const zugang = zugangVon(anfrage);
+      // Repo geht vor; ein Ordner zählt nur ohne erkannte Repo-URL.
+      const info = e.data.repo?.trim() ? kanonischeRepoInfo(e.data.repo) : null;
+      const ordnerSchluessel =
+        !info && e.data.ordner ? ordnerSchluesselPruefen(e.data.ordner) : null;
+      // Ordner zuerst merken, unabhängig von Stufe und Konfiguration: Davon hängt nur die Zurechnung ab.
+      const ordner = ordnerSchluessel
+        ? await withMandant(o.db, zugang.mandantId, async (trx) => {
+            const salts = await mandantSaltsLesen(trx, o.masterKey, zugang.mandantId);
+            if (!salts) return null;
+            return ordnerSitzungMerken(trx, {
+              mandantId: zugang.mandantId,
+              projektSalt: salts.projektSalt,
+              sessionId: e.data.sitzung,
+              schluessel: ordnerSchluessel,
+            });
+          })
+        : null;
+      if (ordner && ordner.tage.length > 0) {
+        ordnerNeuaufbauStarten(o.db, zugang.mandantId, ordner.tage, (f) =>
+          anfrage.log.warn({ err: f }, 'Projektwahl: Neuaufbau nach Ordner-Zuordnung gescheitert'),
+        );
+      }
       // Ist die Stufe schon aktiv und die Konfiguration passt nicht (mehr): niemanden aufhalten und nichts anbieten,
       // was nicht funktioniert oder zu viele Rechte vergibt.
       const hinderung = projektwahlHinderung(o.konfiguration, o.env);
@@ -116,9 +147,19 @@ export async function projektwahlPruefRoute(
         const s = await trx.selectFrom('mandant_projektkatalog').select('stufe').executeTakeFirst();
         stufe = s?.stufe ?? 'aus';
         if (stufe === 'aus' || (await aktiveProjekte(trx)) === 0) return { art: 'frei' as const };
+        // Ordner: wie ein Repo, die Wahl gilt für alle Sitzungen in diesem Ordner.
+        if (ordner) {
+          const zuordnung = await trx
+            .selectFrom('projekt_katalog')
+            .select('projekt_id')
+            .where('projekt_id', '=', ordner.projektId)
+            .executeTakeFirst();
+          return zuordnung
+            ? { art: 'zugeordnet' as const }
+            : { art: 'repo' as const, url: ordner.schluessel };
+        }
         // Repo-Schlüssel wie im Ingest (Alias zuerst), aber nur lesend. Kanonisch, weil der Ingest die `https://`-Form
         // bekommt: Sonst fänden Prüfung und Wahl bei manchen scp-Remotes das Projekt mit der Nutzung nicht.
-        const info = e.data.repo?.trim() ? kanonischeRepoInfo(e.data.repo) : null;
         if (info) {
           const projektId = await repoProjektId(trx, o.masterKey, zugang.mandantId, info.urlNorm);
           const zuordnung = projektId
@@ -245,11 +286,11 @@ export function projektwahlRouten(app: FastifyInstance, ctx: PluginKontext) {
           : undefined;
         const info = repoInfoAusUrlNorm(inhalt.u);
         ziel = {
-          art: 'repo',
+          art: istOrdnerSchluessel(inhalt.u) ? 'ordner' : 'repo',
           name: projektAnzeigename(
             p ?? {
               id: '',
-              anzeigename: null,
+              anzeigename: istOrdnerSchluessel(inhalt.u) ? ordnerAnzeigename(inhalt.u) : null,
               repo_name: info?.repoName ?? null,
               owner: info?.owner ?? null,
               url_norm: inhalt.u,
@@ -293,7 +334,7 @@ export function projektwahlRouten(app: FastifyInstance, ctx: PluginKontext) {
       if (inhalt.u) {
         const kontext = await mandantKontextLaden(trx, masterKey, inhalt.m);
         projektId = await projektZuUrlNorm(trx, kontext, inhalt.u);
-        if (!projektId) return antwort(400, { fehler: 'Repo nicht erkannt.' });
+        if (!projektId) return antwort(400, { fehler: 'Repo oder Ordner nicht erkannt.' });
       }
       // Erste Wahl gewinnt, auch bei gleichzeitigen Anfragen (ON CONFLICT DO NOTHING).
       const neu = projektId

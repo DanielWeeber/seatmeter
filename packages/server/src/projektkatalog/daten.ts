@@ -302,10 +302,17 @@ export async function zuordnungLaden(
       'katalog_projekt.parent_externe_id',
       'katalog_projekt.aktiv',
     ])
-    // Nur Repos mit Nutzung oder Wahl: Zeilen ohne beides sind keine Arbeit an einem Projekt.
+    // Nur Repos mit Nutzung oder Wahl: Zeilen ohne beides sind keine Arbeit an einem Projekt. Ordner ohne Git-Remote
+    // erscheinen, sobald der Hook eine Sitzung darin gemeldet hat, auch vor der ersten Nutzung.
     .where((eb) =>
       eb.or([
         eb('projekt_katalog.projekt_id', 'is not', null),
+        eb.exists(
+          eb
+            .selectFrom('sitzung_ordner')
+            .select('sitzung_ordner.projekt_id')
+            .whereRef('sitzung_ordner.projekt_id', '=', 'projekt.id'),
+        ),
         eb.exists(
           eb
             .selectFrom('tag_aggregat')

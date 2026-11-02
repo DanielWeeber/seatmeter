@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { kanonischeRepoInfo, normalisiereRepoUrl, repoInfoAusUrlNorm } from './repo-url.js';
+import {
+  istOrdnerSchluessel,
+  kanonischeRepoInfo,
+  normalisiereRepoUrl,
+  ordnerAnzeigename,
+  ordnerSchluesselPruefen,
+  repoInfoAusUrlNorm,
+} from './repo-url.js';
 
 describe('normalisiereRepoUrl (Architektur §3.3)', () => {
   const vektoren: Array<[string, string, string | null, string, string]> = [
@@ -143,5 +150,60 @@ describe('repoInfoAusUrlNorm', () => {
     });
     expect(repoInfoAusUrlNorm('https://git.example/repo')?.owner).toBeNull();
     expect(repoInfoAusUrlNorm('kein-url')).toBeNull();
+  });
+});
+
+describe('Ordner-Schlüssel (Ordner ohne Git-Remote)', () => {
+  it('nimmt relative Pfade, `~` und Namen mit Leerzeichen oder Umlauten an', () => {
+    for (const k of [
+      'local-~',
+      'local-notizen',
+      'local-Claude/arbeit/code/angebot-2026',
+      'local-Übung 1',
+      'local-~tilde/x',
+    ]) {
+      expect(ordnerSchluesselPruefen(k), k).toBe(k);
+    }
+    expect(ordnerAnzeigename('local-code/a')).toBe('Ordner code/a');
+  });
+
+  it('lehnt absolute Pfade, Laufwerke, Backslashes, Steuerzeichen und `..` ab', () => {
+    for (const k of [
+      'local-',
+      'local-/Users/alice/code',
+      'local-~/code',
+      'local-C:/Users/alice',
+      'local-c:\\Users\\alice',
+      'local-a\\b',
+      'local-a/../b',
+      'local-./a',
+      'local-a//b',
+      'local-a/',
+      'local-a\nb',
+      `local-${'x'.repeat(1001)}`,
+      'local-a\u202eb',
+      'local-a\u200bb',
+      'local-a\u0085b',
+      'lokal-a',
+      'https://git.example.org/o/r',
+    ]) {
+      expect(ordnerSchluesselPruefen(k), k).toBeNull();
+    }
+  });
+
+  it('keine Remote-URL wird zu einem Ordner-Schlüssel, und kein Ordner-Schlüssel ist eine Remote-URL', () => {
+    for (const roh of [
+      'local-code/a',
+      'local-x:code/a',
+      'https://local-code/a',
+      'git@local-host:code/a.git',
+      'ssh://git@local-x/a',
+    ]) {
+      const info = kanonischeRepoInfo(roh);
+      expect(istOrdnerSchluessel(info?.urlNorm), roh).toBe(false);
+      expect(istOrdnerSchluessel(normalisiereRepoUrl(roh)?.urlNorm), roh).toBe(false);
+    }
+    expect(normalisiereRepoUrl('local-code/a')).toBeNull();
+    expect(repoInfoAusUrlNorm('local-code/a')).toBeNull();
   });
 });

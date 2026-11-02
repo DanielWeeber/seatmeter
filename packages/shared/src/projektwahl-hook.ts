@@ -3,7 +3,11 @@
 // Läuft inline in bash 3.2 (macOS), Linux/WSL und Git Bash, ohne jq und ohne installierte Dateien.
 //
 // Regeln: Der Prompt verlässt den Rechner nie (`sed` gibt nur die Sitzungs-ID aus, der Prompt landet in keiner
-// Variablen). Gesendet werden nur Sitzungs-ID und Repo-URL ohne Zugangsdaten, lokale Pfade nie. Kein `eval`. Jeder Fehler
+// Variablen). Gesendet werden Sitzungs-ID und Repo-URL ohne Zugangsdaten. Nur in einem Ordner ganz ohne Git-Remote
+// (kein Repo oder ein Repo ohne jedes Remote) kommt der Ordner-Schlüssel `local-<Pfad relativ zum Home-Ordner>` dazu,
+// außerhalb des Home-Ordners nur `local-<letzter Ordnername>`, im Home-Ordner selbst `local-~`; nie ein absoluter Pfad,
+// nie der Home-Ordner selbst (darin steht meist der Benutzername). Fehlt git, ist HOME leer oder `/`, oder meldet git etwas
+// anderes als „kein Repo“ (z. B. `safe.directory`), bleibt der Ordner auf dem Rechner. Kein `eval`. Jeder Fehler
 // (kein Token, kein Netz, Server nicht erreichbar, unbekannte Antwort) lässt den Prompt durch. Eine Marke im
 // Cache-Ordner spart die Netzanfrage je Prompt; sie läuft ab, damit spätere Änderungen am Server wirken. Ihr Name enthält
 // eine Prüfsumme des Tokens, damit sich zwei Organisationen im selben Repo nicht gegenseitig durchwinken. Geht der
@@ -53,6 +57,36 @@ export interface ProjektwahlHookOptionen {
 const REMOTE_MUSTER =
   '^([A-Za-z][A-Za-z0-9+.-]+://[^/@[:space:]]+/+[^/@[:space:]][^@[:space:]]*|([^@/:[:space:]]+@)?[^@:/[:space:]]{2,}:/?[^/@[:space:]][^@[:space:]]*)$';
 
+/**
+ * Ordner-Schlüssel `o`, nur ohne Repo-URL und nur in einem Ordner ganz ohne Git-Remote. Ein Remote, das der Hook nicht
+ * sendet (lokaler Pfad, kaputte URL), zählt als Remote: Dann bleibt alles wie bisher (Wahl je Sitzung), kein Pfad.
+ * `w` (`ORDNER_NORMALISIEREN`) vereinheitlicht HOME und `pwd -P` (Backslash zu `/`, `C:` zu `/c`, Laufwerksbuchstabe
+ * klein, doppelte und abschließende `/` weg), damit der Vergleich auch in Git Bash unter Windows trägt; HOME wird vorher
+ * physisch aufgelöst (`cd` + `pwd -P`), sonst gälte ein Ordner unter einem verlinkten Home-Ordner als außerhalb.
+ * Im Home-Ordner `~`, darunter der relative Pfad, sonst nur der letzte Ordnername, außer er gleicht dem Namen des
+ * Home-Ordners oder dem Benutzernamen; Steuerzeichen (auch Zeilenumbrüche) im Ergebnis: nichts senden. Die Meldung
+ * „kein Repo“ zählt nur am Anfang der Ausgabe von git (sonst könnte ein Ordnername im Pfad einer anderen Meldung sie
+ * vortäuschen).
+ */
+export const ORDNER_NORMALISIEREN = `w() { x=$(printf %s "$1" | sed -e 's|\\\\|/|g' -e 's|^\\([A-Za-z]\\):|/\\1|' -e 's|//*|/|g' -e 's|\\(.\\)/$|\\1|'); case "$x" in /[A-Za-z]|/[A-Za-z]/*) x=/$(printf %s "$x" | cut -c2 | tr A-Z a-z)$(printf %s "$x" | cut -c3-) ;; esac; printf %s "$x"; }`;
+const ORDNER_ZEILEN = [
+  `o=`,
+  `if [ -z "$u" ] && command -v git >/dev/null 2>&1; then`,
+  `  if g=$(LC_ALL=C git rev-parse --git-dir 2>&1); then v=$(git remote 2>/dev/null) && [ -z "$v" ] && o=1`,
+  `  else case "$g" in "fatal: not a git repository"*) o=1 ;; esac; fi`,
+  `fi`,
+  `if [ -n "$o" ]; then`,
+  `  ${ORDNER_NORMALISIEREN}`,
+  `  H=; [ -n "\${HOME:-}" ] && { H=$(CDPATH= cd "$HOME" 2>/dev/null && pwd -P) || H=$HOME; }`,
+  `  H=$(w "$H"); P=$(w "$(pwd -P 2>/dev/null)")`,
+  `  case "$H" in ""|/) o= ;; *) case "$P" in "") o= ;; "$H") o='~' ;; "$H"/*) o=\${P#"$H"/} ;; *) o=\${P##*/} ;; esac ;; esac`,
+  // Außerhalb des Home-Ordners kann der letzte Name der Benutzername sein (WSL in /mnt/c/Users/<name>, sudo): dann nichts.
+  `  case "$P" in "$H"|"$H"/*) ;; *) b=$(printf %s "$o" | tr A-Z a-z); for n in "\${H##*/}" "\${USER:-}" "\${LOGNAME:-}" "\${USERNAME:-}"; do [ -n "$n" ] && [ "$b" = "$(printf %s "$n" | tr A-Z a-z)" ] && o=; done ;; esac`,
+  `  case "$o" in *[[:cntrl:]]*) o= ;; esac`,
+  `  [ -n "$o" ] && o=local-$o`,
+  `fi`,
+];
+
 function shEinfach(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
@@ -73,14 +107,16 @@ export function projektwahlHookBefehl(o: ProjektwahlHookOptionen): string {
     `case "$t" in *[!A-Za-z0-9_-]*) exit 0 ;; esac`,
     `p=${shEinfach(REMOTE_MUSTER)}`,
     `u=$(git remote get-url origin 2>/dev/null | head -n 1 | sed -E -e 's|^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@|\\1|' | grep -E "$p" | sed -E -e 's/[?#].*$//' -e 's|^[^@/:[:space:]]+@([^@:/[:space:]]+:)|git@\\1|' | grep -E "$p" | grep -Eiv '^file:')`,
+    ...ORDNER_ZEILEN,
     `h=$(printf %s "$t" | cksum | cut -d' ' -f1)`,
-    `if [ -n "$u" ]; then k=r$h-$(printf %s "$u" | cksum | cut -d' ' -f1); else k=s$h-$s; fi`,
+    // Ordner: Marke je Ordner und Sitzung, denn jede Sitzung muss ihren Ordner einmal melden (sonst fehlt ihre Nutzung).
+    `if [ -n "$u" ]; then k=r$h-$(printf %s "$u" | cksum | cut -d' ' -f1); elif [ -n "$o" ]; then k=o$h-$(printf %s "$o" | cksum | cut -d' ' -f1)-$s; else k=s$h-$s; fi`,
     `d=\${XDG_CACHE_HOME:-$HOME/.cache}/seatmeter`,
     `e=\${TMPDIR:-/tmp}/seatmeter-$(id -u)`,
     `[ -d "$e" ] && [ -O "$e" ] && [ ! -L "$e" ] && f=$e || f=`,
     `m() { { mkdir -p "$d" && touch "$d/$1"; } 2>/dev/null && return 0; mkdir -m 700 "$e" 2>/dev/null; [ -d "$e" ] && [ -O "$e" ] && [ ! -L "$e" ] && touch "$e/$1" 2>/dev/null; }`,
     `[ -n "$(find "$d" \${f:+"$f"} -maxdepth 1 \\( -name "$k" -mmin -${PROJEKTWAHL_MARKE_ZUGEORDNET_MINUTEN} -o -name "$k.frei" -mmin -${PROJEKTWAHL_MARKE_FREI_MINUTEN} -o -name "$k.warn" -mmin -${PROJEKTWAHL_MARKE_FREI_MINUTEN} \\) 2>/dev/null)" ] && exit 0`,
-    `r=$(printf 'header = "Authorization: Bearer %s"\\n' "$t" | curl -K - -fsS --connect-timeout 1 --max-time 2 --data-urlencode "sitzung=$s" --data-urlencode "repo=$u" ${shEinfach(url)} 2>/dev/null) || exit 0`,
+    `r=$(printf 'header = "Authorization: Bearer %s"\\n' "$t" | curl -K - -fsS --connect-timeout 1 --max-time 2 --data-urlencode "sitzung=$s" --data-urlencode "repo=$u" --data-urlencode "ordner=$o" ${shEinfach(url)} 2>/dev/null) || exit 0`,
     `case "$r" in`,
     `  zugeordnet) m "$k" ;;`,
     `  frei) m "$k.frei" ;;`,

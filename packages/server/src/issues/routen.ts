@@ -11,6 +11,8 @@ import {
   type IssuesAntwort,
   type Kennzahlen,
   type ProjektIssuesAntwort,
+  istOrdnerSchluessel,
+  ordnerAnzeigename,
 } from '@seatmeter/shared';
 import { z } from 'zod';
 import { heuteIn, monatsGrenzen } from '../aggregation/tage.js';
@@ -101,6 +103,7 @@ export function projektAnzeigename(p: {
 }): string {
   if (p.anzeigename) return p.anzeigename;
   if (p.repo_name) return p.owner ? `${p.owner}/${p.repo_name}` : p.repo_name;
+  if (istOrdnerSchluessel(p.url_norm)) return ordnerAnzeigename(p.url_norm);
   return p.url_norm ?? `Projekt ${p.id.slice(0, 8)}`;
 }
 

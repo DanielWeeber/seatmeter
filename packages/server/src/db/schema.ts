@@ -627,6 +627,14 @@ export interface SitzungKatalogTabelle {
   erstellt: ZeitDefault;
 }
 
+/** Ordner ohne Git-Remote (Migration 0033): Sitzung → Projekt des Ordners; erste Meldung des Hooks gilt. */
+export interface SitzungOrdnerTabelle {
+  mandant_id: string;
+  session_id: string;
+  projekt_id: string;
+  erstellt: ZeitDefault;
+}
+
 /** Kosten je Katalog-Projekt und Repo beim Monatsabschluss (Migration 0026); `projekt_id` NULL = ohne Repo. */
 export interface KatalogAbschlussTabelle {
   id: Id;
@@ -797,6 +805,7 @@ export interface Datenbank {
   katalog_sync_tag: KatalogSyncTagTabelle;
   projekt_katalog: ProjektKatalogTabelle;
   sitzung_katalog: SitzungKatalogTabelle;
+  sitzung_ordner: SitzungOrdnerTabelle;
   katalog_abschluss: KatalogAbschlussTabelle;
   mandant_oidc: MandantOidcTabelle;
   mandant_domain: MandantDomainTabelle;

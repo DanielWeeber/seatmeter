@@ -16,6 +16,7 @@ import {
   anfrageSpeichern,
   leereStatistik,
   nutzungVermerken,
+  ordnerProjekteLaden,
   personAufloesen,
   projektAufloesen,
   sitzungenBuendeln,
@@ -93,7 +94,6 @@ export async function logsVerarbeiten(
       const tag = tagIn(ctx.zeitzone, a.ts);
       const personId = await personAufloesen(trx, ctx, a.person, tag, personen);
       const projektId = await projektAufloesen(trx, ctx, a.projekt, projekte);
-      if (!projektId) statistik.unzugeordnet++;
       if (a.sessionId) {
         sitzungen.push({
           quelle: QUELLE_A,
@@ -110,6 +110,17 @@ export async function logsVerarbeiten(
       }
       vorbereitet.push({ a, tag, personId, projektId });
     }
+    // Ohne Repo: Ordner-Projekt der Sitzung, falls der Hook den Ordner gemeldet hat.
+    const ordner = await ordnerProjekteLaden(
+      trx,
+      ctx.mandantId,
+      vorbereitet.filter((v) => !v.projektId).map((v) => v.a.sessionId),
+    );
+    if (ordner.size > 0) {
+      for (const v of vorbereitet) v.projektId ??= ordner.get(v.a.sessionId ?? '') ?? null;
+      for (const s of sitzungen) s.projektId ??= ordner.get(s.sessionId) ?? null;
+    }
+    for (const v of vorbereitet) if (!v.projektId) statistik.unzugeordnet++;
     for (const e of auths) {
       const personId = await personAufloesen(
         trx,

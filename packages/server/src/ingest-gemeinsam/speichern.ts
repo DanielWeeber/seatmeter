@@ -5,7 +5,10 @@ import { sql, type Transaction } from 'kysely';
 import {
   QUELLE_A,
   QUELLE_B,
+  istOrdnerSchluessel,
   normalisiereRepoUrl,
+  ordnerAnzeigename,
+  ordnerSchluesselPruefen,
   repoInfoAusUrlNorm,
   type AuthKlasse,
   type RepoInfo,
@@ -273,15 +276,56 @@ async function projektEinfuegen(
  */
 export async function projektZuUrlNorm(
   trx: Trx,
-  ctx: MandantKontext,
+  ctx: Pick<MandantKontext, 'mandantId' | 'projektSalt'>,
   urlNorm: string,
 ): Promise<string | null> {
+  if (istOrdnerSchluessel(urlNorm)) {
+    return ordnerSchluesselPruefen(urlNorm) ? ordnerProjektAufloesen(trx, ctx, urlNorm) : null;
+  }
   const info = repoInfoAusUrlNorm(urlNorm);
   if (!info) return null;
   return (
     (await projektFinden(trx, ctx.mandantId, ctx.projektSalt, urlNorm)) ??
     projektEinfuegen(trx, ctx.mandantId, projektKey(ctx.projektSalt, urlNorm), info)
   );
+}
+
+/**
+ * Projekt-ID zu einem Ordner ohne Git-Remote (Schlüssel `local-…` vom Hook, schon geprüft): Schlüssel
+ * HMAC(projekt_salt, Schlüssel), `url_norm` = Schlüssel, Provider `pfad`, Anzeigename `Ordner <Pfad>`. Legt das Projekt
+ * beim ersten Mal an; danach ist es ein Projekt wie jedes andere (Zuordnung, Budgets, Kosten).
+ */
+export async function ordnerProjektAufloesen(
+  trx: Trx,
+  ctx: Pick<MandantKontext, 'mandantId' | 'projektSalt'>,
+  schluessel: string,
+): Promise<string> {
+  const vorhanden = await projektFinden(trx, ctx.mandantId, ctx.projektSalt, schluessel);
+  if (vorhanden) return vorhanden;
+  const key = projektKey(ctx.projektSalt, schluessel);
+  const neu = await trx
+    .insertInto('projekt')
+    .values({
+      mandant_id: ctx.mandantId,
+      projekt_key: key,
+      url_norm: schluessel,
+      repo_name: null,
+      owner: null,
+      provider: 'pfad',
+      anzeigename: ordnerAnzeigename(schluessel),
+    })
+    .onConflict((oc) => oc.columns(['mandant_id', 'projekt_key']).doNothing())
+    .returning('id')
+    .executeTakeFirst();
+  if (neu) return neu.id;
+  return (
+    await trx
+      .selectFrom('projekt')
+      .select('id')
+      .where('mandant_id', '=', ctx.mandantId)
+      .where('projekt_key', '=', key)
+      .executeTakeFirstOrThrow()
+  ).id;
 }
 
 /**
@@ -333,6 +377,26 @@ export async function pfadProjektAufloesen(
   }
   cache.set(cacheKey, id);
   return id;
+}
+
+/**
+ * Ordner-Projekte der Sitzungen (`sitzung_ordner`, vom Hook gemeldet) für Anfragen ohne Repo. Eine Abfrage je Push und
+ * nur, wenn es solche Anfragen gibt; Anfragen mit Repo kosten nichts zusätzlich. Ein Repo geht immer vor.
+ */
+export async function ordnerProjekteLaden(
+  trx: Trx,
+  mandantId: string,
+  sessionIds: Iterable<string | null>,
+): Promise<Map<string, string>> {
+  const ids = [...new Set([...sessionIds].filter((s): s is string => !!s))];
+  if (ids.length === 0) return new Map();
+  const zeilen = await trx
+    .selectFrom('sitzung_ordner')
+    .select(['session_id', 'projekt_id'])
+    .where('mandant_id', '=', mandantId)
+    .where('session_id', 'in', ids)
+    .execute();
+  return new Map(zeilen.map((z) => [z.session_id, z.projekt_id]));
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -118,3 +118,44 @@ export function repoInfoAusUrlNorm(urlNorm: string): RepoInfo | null {
     provider: erkenneProvider(host),
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Ordner ohne Git-Remote
+
+/**
+ * Präfix des Ordner-Schlüssels, den der verwaltete Hook nur für Ordner ohne Git-Remote sendet:
+ * `local-<Pfad relativ zum Home-Ordner>` (außerhalb davon nur der letzte Ordnername, im Home-Ordner selbst `~`).
+ * Normalisierte Remote-URLs beginnen immer mit `https://`, Pfad-Projekte des Agenten mit `pfad:`; ein Ordner-Schlüssel
+ * kann deshalb nie mit einem Repo zusammenfallen oder aus einer Remote-URL entstehen.
+ */
+export const ORDNER_PRAEFIX = 'local-';
+/** Höchstlänge des Pfads hinter dem Präfix. */
+export const ORDNER_PFAD_MAX = 1000;
+
+export function istOrdnerSchluessel(urlNorm: string | null | undefined): urlNorm is string {
+  return typeof urlNorm === 'string' && urlNorm.startsWith(ORDNER_PRAEFIX);
+}
+
+/**
+ * Prüft einen gemeldeten Ordner-Schlüssel und gibt ihn unverändert zurück, sonst `null`. Abgelehnt wird alles, was
+ * nach absolutem Pfad (`/…`, `~/…`), Laufwerk, Backslash, Steuer- oder unsichtbaren Zeichen oder `.`/`..`-Teilen aussieht: Der Hook schickt nur relative
+ * Pfade ohne solche Teile, und ein absoluter Pfad soll auch von einem fremden Absender nie gespeichert werden.
+ */
+export function ordnerSchluesselPruefen(roh: string): string | null {
+  if (!istOrdnerSchluessel(roh)) return null;
+  const pfad = roh.slice(ORDNER_PRAEFIX.length);
+  if (pfad === '' || pfad.length > ORDNER_PFAD_MAX) return null;
+  if (pfad === '~') return roh;
+  // Steuerzeichen (auch C1), Zeilentrenner, Nullbreite und Richtungswechsel: Sie verfälschten die Anzeige.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff\\]/.test(pfad))
+    return null;
+  if (pfad.startsWith('/') || pfad.startsWith('~/') || /^[a-z]:/i.test(pfad)) return null;
+  if (pfad.split('/').some((t) => t === '' || t === '.' || t === '..')) return null;
+  return roh;
+}
+
+/** Anzeigename eines Ordner-Projekts: `Ordner <Pfad>`. */
+export function ordnerAnzeigename(schluessel: string): string {
+  return `Ordner ${schluessel.slice(ORDNER_PRAEFIX.length)}`;
+}

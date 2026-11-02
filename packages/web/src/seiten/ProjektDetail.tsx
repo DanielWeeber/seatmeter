@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { istOrdnerSchluessel, ordnerAnzeigename } from '@seatmeter/shared';
 import { Link, useParams } from 'react-router';
 import { useProjekt } from '../api/abfragen';
 import type { PersonZeile } from '../api/typen';
@@ -57,7 +58,11 @@ export function ProjektDetail() {
         {(d) => {
           const leer = d.anfragen === 0 && d.nach_modell.length === 0 && d.nach_tag.length === 0;
           const repository =
-            d.projekt.id === null ? LEER : (d.projekt.url_norm ?? 'kein Repo (Pfad-Projekt)');
+            d.projekt.id === null
+              ? LEER
+              : istOrdnerSchluessel(d.projekt.url_norm)
+                ? `kein Repo (${ordnerAnzeigename(d.projekt.url_norm)})`
+                : (d.projekt.url_norm ?? 'kein Repo (Pfad-Projekt)');
           return (
             <>
               <div className="mt-4">

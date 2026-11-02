@@ -178,6 +178,22 @@ export async function aufbewahrungJob(
         )
         .executeTakeFirst();
       neu('sitzung_katalog', isoTag(grenzeAnfrage), sitzungKatalog.numDeletedRows);
+      // Ordner der Sitzung (Hook): dieselbe Regel. Das Ordner-Projekt bleibt wie jedes Projekt.
+      const sitzungOrdner = await trx
+        .deleteFrom('sitzung_ordner')
+        .where('erstellt', '<', grenzeAnfrage)
+        .where(({ eb, exists, not, selectFrom }) =>
+          not(
+            exists(
+              selectFrom('anfrage')
+                .select(eb.lit(1).as('x'))
+                .whereRef('anfrage.mandant_id', '=', 'sitzung_ordner.mandant_id')
+                .whereRef('anfrage.session_id', '=', 'sitzung_ordner.session_id'),
+            ),
+          ),
+        )
+        .executeTakeFirst();
+      neu('sitzung_ordner', isoTag(grenzeAnfrage), sitzungOrdner.numDeletedRows);
 
       const grenzeKontrolle = plusTage(heute, -m.aufbewahrung_kontrollsumme_tage);
       const kontrolle = await trx

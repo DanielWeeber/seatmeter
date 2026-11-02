@@ -476,6 +476,8 @@ export type KatalogKostenAntwort = z.infer<typeof katalogKostenAntwortSchema>;
 export const projektwahlAntwortSchema = z.object({
   ziel: z.discriminatedUnion('art', [
     z.object({ art: z.literal('repo'), name: z.string() }),
+    /** Ordner ohne Git-Remote (Schlüssel `local-…` vom Hook); die Wahl gilt wie bei einem Repo für alle Sitzungen darin. */
+    z.object({ art: z.literal('ordner'), name: z.string() }),
     z.object({ art: z.literal('sitzung') }),
   ]),
   gueltig_bis: z.string(),

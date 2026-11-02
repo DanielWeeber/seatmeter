@@ -29,6 +29,7 @@ import {
   anfrageSpeichern,
   leereStatistik,
   nutzungVermerken,
+  ordnerProjekteLaden,
   personAufloesen,
   personSchluessel,
   pfadProjektAufloesen,
@@ -85,6 +86,23 @@ async function projektIdFuer(
     { url: p.url_norm, owner: p.owner, repoName: p.repo_name, provider: p.provider },
     cache,
   );
+}
+
+/** Ohne Repo: Ordner-Projekt der Sitzung (`sitzung_ordner`), falls der Hook den Ordner gemeldet hat. */
+async function ordnerErgaenzen(
+  trx: Parameters<Parameters<typeof withMandant>[2]>[0],
+  mandantId: string,
+  sitzungen: SitzungEingang[],
+  anfragen: { a: { session_id: string }; projektId: string | null }[],
+): Promise<void> {
+  const ohne = [
+    ...sitzungen.filter((s) => !s.projektId).map((s) => s.sessionId),
+    ...anfragen.filter((v) => !v.projektId).map((v) => v.a.session_id),
+  ];
+  const ordner = await ordnerProjekteLaden(trx, mandantId, ohne);
+  if (ordner.size === 0) return;
+  for (const s of sitzungen) s.projektId ??= ordner.get(s.sessionId) ?? null;
+  for (const v of anfragen) v.projektId ??= ordner.get(v.a.session_id) ?? null;
 }
 
 /** Prüft, dass eine gemeldete URL wirklich eine normalisierte Remote-URL ist (kein Pfad, keine Zugangsdaten). */
@@ -195,7 +213,6 @@ export async function agentIngestRouten(
                 personen,
               ));
             const projektId = await projektIdFuer(trx, ctx, a.projekt, projekte);
-            if (!projektId) statistik.unzugeordnet++;
             sitzungen.push({
               quelle: QUELLE_B,
               sessionId: a.session_id,
@@ -210,6 +227,8 @@ export async function agentIngestRouten(
             });
             vorbereitet.push({ a, ts, tag, personId, projektId });
           }
+          await ordnerErgaenzen(trx, ctx.mandantId, sitzungen, vorbereitet);
+          for (const v of vorbereitet) if (!v.projektId) statistik.unzugeordnet++;
           for (const s of sitzungenBuendeln(sitzungen))
             await sitzungSpeichern(trx, ctx.mandantId, s);
           const schluessel = (x: (typeof vorbereitet)[number]) =>
@@ -319,6 +338,7 @@ export async function agentIngestRouten(
               });
               ergebnis.angenommen++;
             }
+            await ordnerErgaenzen(trx, ctx.mandantId, sitzungen, []);
             for (const s of sitzungenBuendeln(sitzungen))
               await sitzungSpeichern(trx, ctx.mandantId, s);
             await nutzungVermerken(trx, zugang.tokenId, zugang.rechnerId, push.data.agent_version);
