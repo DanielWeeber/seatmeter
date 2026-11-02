@@ -1,6 +1,6 @@
 // Antworten von „SSO und Konten“ (Routen unter /api/v1/mandant/{oidc,domains,konten,scim-tokens}, Pfade über
 // `mandantPfad`), nachsichtig geprüft: unbekannte Felder stören nicht, fehlende optionale Felder werden zu null.
-import { mandantOidcGlobalSchema } from '@seatmeter/shared';
+import { mandantOidcGlobalSchema, mandantOidcKontenSchema } from '@seatmeter/shared';
 import { z } from 'zod';
 
 const textOderNull = z
@@ -30,6 +30,7 @@ export type OidcKonfiguration = z.infer<typeof oidcKonfigurationSchema>;
 export const oidcAntwortSchema = z.object({
   konfiguration: oidcKonfigurationSchema.nullable(),
   global: mandantOidcGlobalSchema.nullish().transform((w) => w ?? null),
+  ...mandantOidcKontenSchema.shape,
   redirect_uri: textOderNull,
   start_url: z.string(),
 });

@@ -24,6 +24,25 @@ export const TEXT_SERVER =
   'Diese Anmeldung wird in den Einstellungen SEATMETER_OIDC_* des Servers gepflegt und lässt sich hier nicht ändern.';
 export const TEXT_KEINE_GRUPPEN =
   'Keine Gruppe ist diesem Mandanten zugeordnet. Über diese Anmeldung bekommt darum niemand eine Rolle. Rollen vergeben Sie dann unter „Konten“.';
+export const TEXT_OHNE_EMAIL =
+  'Der Identitätsanbieter liefert keine bestätigte E-Mail (email_verified). Konten heißen deshalb oidc:<Name>; Klarnamen aus der Anmeldung und die Zuordnung per E-Mail funktionieren nicht. Siehe Doku SSO-und-SCIM, Abschnitt „E-Mail muss als bestätigt kommen“.';
+
+/** Hinweis, wenn der Mandant OIDC-Konten hat und bei keinem je eine bestätigte E-Mail ankam. */
+export function hatKeineBestaetigteEmail(d: OidcAntwort): boolean {
+  return d.oidc_konten > 0 && d.oidc_konten_ohne_email === d.oidc_konten;
+}
+
+function OhneEmailHinweis() {
+  return (
+    <p
+      role="alert"
+      className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      {TEXT_OHNE_EMAIL}
+    </p>
+  );
+}
+
 export const KNOPF_EIGENE = 'Eigene Anbindung für diesen Mandant einrichten';
 /** Belegt in `oidc-global-anzeige.test.ts`. */
 export const textWeg = (global: string) =>
@@ -341,11 +360,13 @@ export function Oidc({ mandantId }: { mandantId: string }) {
         {(d) =>
           d.global ? (
             <>
+              {hatKeineBestaetigteEmail(d) && <OhneEmailHinweis />}
               <ServerKonfiguration g={d.global} />
               <EigeneAnbindung d={d} g={d.global} mandantId={mandantId} />
             </>
           ) : (
             <>
+              {hatKeineBestaetigteEmail(d) && <OhneEmailHinweis />}
               {!d.konfiguration && (
                 <Hinweis>
                   Noch keine OIDC-Anbindung. Trage die Daten des Identity Providers ein.

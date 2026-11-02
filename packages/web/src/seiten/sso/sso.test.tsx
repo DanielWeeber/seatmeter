@@ -7,6 +7,7 @@ import {
   TEXT_INAKTIV,
   TEXT_KEINE_GRUPPEN,
   TEXT_KONTEN,
+  TEXT_OHNE_EMAIL,
   TEXT_SERVER,
   textBeide,
   textWeg,
@@ -19,10 +20,14 @@ const M = (rest: string) => `/api/v1/mandant${rest}?mandant=m-1`;
 
 const OIDC_LEER = {
   konfiguration: null,
+  oidc_konten: 0,
+  oidc_konten_ohne_email: 0,
   redirect_uri: null,
   start_url: '/api/v1/auth/oidc/start?mandant=beispiel',
 };
 const OIDC_GESETZT = {
+  oidc_konten: 2,
+  oidc_konten_ohne_email: 0,
   konfiguration: {
     issuer: 'https://idp.example.org',
     client_id: 'seatmeter',
@@ -134,6 +139,37 @@ describe('OIDC: Serverkonfiguration und eigene Anbindung', () => {
     const warnung = await screen.findByText(TEXT_KEINE_GRUPPEN);
     expect(warnung.getAttribute('role')).toBe('alert');
     expect(screen.queryByRole('table', { name: 'Gruppen der Serverkonfiguration' })).toBeNull();
+  });
+
+  it('Hinweis „keine bestätigte E-Mail“: nur wenn es OIDC-Konten gibt und alle Ersatznamen tragen', async () => {
+    render({
+      [M('/oidc')]: json({
+        ...OIDC_LEER,
+        oidc_konten: 3,
+        oidc_konten_ohne_email: 3,
+        global: GLOBAL,
+      }),
+    });
+    const hinweis = await screen.findByText(TEXT_OHNE_EMAIL);
+    expect(hinweis.getAttribute('role')).toBe('alert');
+    expect(hinweis.className).toContain('amber');
+  });
+
+  it('kein Hinweis ohne OIDC-Konten und bei gemischten Konten', async () => {
+    const ohne = render({ [M('/oidc')]: json({ ...OIDC_LEER, global: GLOBAL }) });
+    await screen.findByRole('heading', { name: TITEL_SERVER });
+    expect(screen.queryByText(TEXT_OHNE_EMAIL)).toBeNull();
+    ohne.unmount();
+    render({
+      [M('/oidc')]: json({
+        ...OIDC_LEER,
+        oidc_konten: 3,
+        oidc_konten_ohne_email: 1,
+        global: GLOBAL,
+      }),
+    });
+    await screen.findByRole('heading', { name: TITEL_SERVER });
+    expect(screen.queryByText(TEXT_OHNE_EMAIL)).toBeNull();
   });
 
   it('nur eigene Anbindung: wie bisher, keine Serverkonfiguration, kein Klappknopf', async () => {

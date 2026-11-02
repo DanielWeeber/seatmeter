@@ -169,6 +169,57 @@ describe('GET /api/v1/mandant/oidc: global', () => {
   });
 });
 
+describe('GET /api/v1/mandant/oidc: Zählwerte zu OIDC-Konten (Hinweis „keine bestätigte E-Mail“)', () => {
+  async function oidcKonto(mandantId: string, benutzername: string) {
+    const b = await db
+      .insertInto('benutzer')
+      .values({ benutzername, login: 'oidc', oidc_sub: randomUUID() })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('rolle')
+      .values({ mandant_id: mandantId, benutzer_id: b.id, rolle: 'controller', projekt_ids: null })
+      .execute();
+  }
+  async function zaehlwerte(m: Awaited<ReturnType<typeof mandantMitSlug>>) {
+    const a = await appMit({});
+    const r = await a.inject({ method: 'GET', url: PFAD, headers: m.admin.headers });
+    expect(r.statusCode, r.body).toBe(200);
+    const j = r.json();
+    return { oidc_konten: j.oidc_konten, oidc_konten_ohne_email: j.oidc_konten_ohne_email };
+  }
+
+  it('ohne OIDC-Konto: 0 und 0 (der Admin ist ein lokales Konto)', async () => {
+    const m = await mandantMitSlug();
+    expect(await zaehlwerte(m)).toEqual({ oidc_konten: 0, oidc_konten_ohne_email: 0 });
+  });
+
+  it('alle OIDC-Konten mit Ersatznamen oidc:…: beide Zahlen gleich', async () => {
+    const m = await mandantMitSlug();
+    await oidcKonto(m.id, `oidc:anna.${randomUUID().slice(0, 8)}`);
+    await oidcKonto(m.id, `oidc:${m.slug}:${randomUUID()}`);
+    expect(await zaehlwerte(m)).toEqual({ oidc_konten: 2, oidc_konten_ohne_email: 2 });
+  });
+
+  it('gemischt: nur die Konten mit Ersatznamen zählen als ohne E-Mail, fremde Mandanten nie', async () => {
+    const m = await mandantMitSlug();
+    const fremd = await mandantMitSlug();
+    await oidcKonto(m.id, `oidc:anna.${randomUUID().slice(0, 8)}`);
+    await oidcKonto(m.id, `bea.${randomUUID().slice(0, 8)}@example.org`);
+    await oidcKonto(fremd.id, `oidc:fremd.${randomUUID().slice(0, 8)}`);
+    expect(await zaehlwerte(m)).toEqual({ oidc_konten: 2, oidc_konten_ohne_email: 1 });
+  });
+
+  it('die Antwort enthält nur Zahlen, keine Kontonamen', async () => {
+    const m = await mandantMitSlug();
+    const name = `oidc:geheim.${randomUUID().slice(0, 8)}`;
+    await oidcKonto(m.id, name);
+    const a = await appMit({});
+    const r = await a.inject({ method: 'GET', url: PFAD, headers: m.admin.headers });
+    expect(r.body).not.toContain(name);
+  });
+});
+
 describe('Was eine zweite Anbindung neben der Serverkonfiguration ändert', () => {
   const server = new FakeIssuer();
   const eigen = new FakeIssuer();

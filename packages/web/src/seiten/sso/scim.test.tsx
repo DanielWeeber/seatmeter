@@ -34,7 +34,13 @@ const LISTE = {
 function render(routen: Routen) {
   return rendereApp('/einrichtung/sso', {
     '/api/v1/auth/me': json(ME),
-    [M('/oidc')]: json({ konfiguration: null, redirect_uri: null, start_url: '/x' }),
+    [M('/oidc')]: json({
+      konfiguration: null,
+      oidc_konten: 0,
+      oidc_konten_ohne_email: 0,
+      redirect_uri: null,
+      start_url: '/x',
+    }),
     [M('/domains')]: json({ domains: [] }),
     [M('/konten')]: json({ konten: [], kontingent: { belegt: 0, max: 5 } }),
     [M('/scim-tokens')]: json(LISTE),

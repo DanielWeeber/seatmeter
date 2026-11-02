@@ -40,6 +40,35 @@ Was eine **eigene Anbindung daneben** ändert:
 - Nach dem Login ist der aktive Mandant der Mandant des Anmeldedienstes.
 - Ist das **Kontenkontingent** ausgeschöpft und bekäme das Konto seine erste Rolle im Mandanten, zeigt seatmeter eine Seite „Anmeldung nicht möglich“ (403 `konten_kontingent`).
 
+### E-Mail muss als bestätigt kommen
+
+seatmeter vertraut einer E-Mail aus der Anmeldung nur, wenn der Anbieter sie als bestätigt meldet (Claim `email_verified` ist nicht `false`). Liefert der Anbieter `email_verified: false`, passiert Folgendes:
+
+- Neue Konten heißen `oidc:<Name>` (bzw. `oidc:<slug>:<sub>`) statt wie die E-Mail-Adresse.
+- Klarnamen aus der Anmeldung funktionieren nicht: Die Befüllung von `person_klar` ordnet über die E-Mail zu, beim Einschalten der Klarnamen meldet seatmeter deshalb „0 Personen befüllt“.
+- Die Zuordnung eines Kontos per E-Mail (z. B. ein eingeladenes Konto verknüpfen) greift nicht, es sei denn, die Domain ist im Mandanten verifiziert.
+
+Auf „SSO und Konten“ zeigt seatmeter einen gelben Hinweis, wenn der Mandant OIDC-Konten hat und alle den Namen `oidc:…` tragen.
+
+**authentik:** Der mitgelieferte Scope-Mapping „email“ sendet `email_verified: false`. Abhilfe am Anbieter:
+
+1. Customization → Property Mappings → Erstellen → „Scope Mapping“. Name z. B. `seatmeter email`, Scope-Name `email`.
+2. Ausdruck:
+
+   ```python
+   return {
+       "email": request.user.email,
+       "email_verified": True,
+   }
+   ```
+
+3. Im OAuth2/OpenID-Provider von seatmeter unter „Scopes“ dieses Mapping statt des Standard-Mappings „email“ auswählen. Die Scopes `openid` und `profile` bleiben.
+4. Die betroffenen Benutzer melden sich neu an. Mit der nächsten Anmeldung füllt seatmeter die Klarnamen (E-Mail und Name aus den Claims). Bereits angelegte `oidc:…`-Konten werden nicht umbenannt; der gelbe Hinweis verschwindet erst, wenn ein Konto mit E-Mail als Namen existiert (neues Konto, oder das alte Konto löschen und neu anmelden). Das Einschalten der Klarnamen allein befüllt solche Konten nicht, weil der Abgleich beim Einschalten über den Kontonamen läuft.
+
+**Andere Anbieter:** Der Claim `email_verified` muss im ID-Token oder Userinfo `true` sein (bei Keycloak: Benutzer mit „E-Mail bestätigt“; bei Entra und Okta gilt der Hinweis zur verifizierten Domain oben).
+
+**Sicherheit:** Setzen Sie `email_verified: True` nur, wenn Benutzer ihre E-Mail-Adresse im Anbieter **nicht selbst ändern** können (Self-Service-Änderung abschalten, Adresse nur durch Admins pflegen oder aus dem Verzeichnis übernehmen). Sonst könnte jemand eine fremde Adresse eintragen und so das Konto, die Rollen und den Klarnamen einer anderen Person übernehmen.
+
 ### Entra ID (Microsoft)
 
 - Microsoft Entra Admin Center → Anwendungen → App-Registrierungen → Neue Registrierung, Kontotyp „Nur Konten in diesem Organisationsverzeichnis“, Umleitungs-URI Typ „Web“ = Redirect-URI von oben.

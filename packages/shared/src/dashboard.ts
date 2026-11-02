@@ -31,6 +31,17 @@ export const mandantOidcGlobalSchema = z.object({
 });
 export type MandantOidcGlobal = z.infer<typeof mandantOidcGlobalSchema>;
 
+/**
+ * Zählwerte zu den OIDC-Konten eines Mandanten (nie Namen): `oidc_konten` = Konten mit Anmeldung über OIDC und einer Rolle im
+ * Mandanten, `oidc_konten_ohne_email` = davon die mit Ersatznamen `oidc:<Name>`, weil der Anbieter keine bestätigte E-Mail
+ * (`email_verified`) geliefert hat.
+ */
+export const mandantOidcKontenSchema = z.object({
+  oidc_konten: z.number().int().nonnegative(),
+  oidc_konten_ohne_email: z.number().int().nonnegative(),
+});
+export type MandantOidcKonten = z.infer<typeof mandantOidcKontenSchema>;
+
 /** Hat das Konto im Mandanten ausschließlich die Rolle `entwickler` (keine Auswertungen)? */
 export function nurEntwickler(rollen: readonly Rolle[]): boolean {
   return rollen.length > 0 && rollen.every((r) => r === 'entwickler');

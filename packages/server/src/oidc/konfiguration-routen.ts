@@ -7,7 +7,8 @@ import { requireAnmeldung } from '../auth/kontext.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import { verschluessele } from '../krypto.js';
-import { ROLLEN, type MandantOidcGlobal } from '@seatmeter/shared';
+import { ROLLEN, type MandantOidcGlobal, type MandantOidcKonten } from '@seatmeter/shared';
+import { sql } from 'kysely';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -77,6 +78,25 @@ async function ausgabe(trx: Trx) {
   return k ? { ...k, client_secret_gesetzt: true as const } : null;
 }
 
+/**
+ * Zählt die OIDC-Konten des Mandanten und davon die mit Ersatznamen `oidc:<Name>` (der Anbieter lieferte keine bestätigte
+ * E-Mail). Nur Zahlen, nie Namen.
+ */
+export async function oidcKontenZaehlen(trx: Trx): Promise<MandantOidcKonten> {
+  const z = await trx
+    .selectFrom('benutzer as b')
+    .where('b.login', '=', 'oidc')
+    .where((eb) =>
+      eb.exists(eb.selectFrom('rolle as r').select('r.id').whereRef('r.benutzer_id', '=', 'b.id')),
+    )
+    .select([
+      sql<string>`count(*)`.as('alle'),
+      sql<string>`count(*) FILTER (WHERE left(b.benutzername, 5) = 'oidc:')`.as('ohne'),
+    ])
+    .executeTakeFirstOrThrow();
+  return { oidc_konten: Number(z.alle), oidc_konten_ohne_email: Number(z.ohne) };
+}
+
 export function registriereKonfigurationRouten(
   app: FastifyInstance,
   db: Db,
@@ -97,6 +117,7 @@ export function registriereKonfigurationRouten(
     return {
       konfiguration: await ausgabe(trx),
       global: angaben.globalFuer(m.slug),
+      ...(await oidcKontenZaehlen(trx)),
       redirect_uri: angaben.redirectUri,
       start_url: `${angaben.startPfad}?mandant=${encodeURIComponent(m.slug)}`,
     };
