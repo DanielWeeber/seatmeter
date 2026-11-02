@@ -76,6 +76,7 @@ export class FakeIssuer {
           authorization_endpoint: `${this.issuer}/authorize`,
           token_endpoint: `${this.issuer}/token`,
           userinfo_endpoint: `${this.issuer}/userinfo`,
+          end_session_endpoint: `${this.issuer}/abmelden`,
           jwks_uri: `${this.issuer}/jwks`,
           response_types_supported: ['code'],
           subject_types_supported: ['public'],

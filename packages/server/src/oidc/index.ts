@@ -18,6 +18,7 @@ import { entschluessele, verschluessele } from '../krypto.js';
 import type { AuthProvider } from '../plugin.js';
 // Typen für request.cookies / reply.setCookie (Plugin registriert der Kern).
 import type {} from '@fastify/cookie';
+import type { MandantOidcGlobal } from '@seatmeter/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as oidc from 'openid-client';
 import { z } from 'zod';
@@ -74,6 +75,31 @@ export function oidcEinstellungen(ee: Konfiguration, publicUrl: string | undefin
   const redirect = redirectUri(ee, publicUrl);
   if (!issuer || !clientId || !secret || !redirect) return null;
   return { issuer, clientId, secret, redirect, scopes: ee.SEATMETER_OIDC_SCOPES };
+}
+
+/**
+ * Der globale Anbieter aus Sicht eines Mandanten, für die Anzeige: ohne Secret, von den Gruppen nur die Rollen in diesem
+ * Mandanten. Zuordnungen anderer Mandanten und `plattform_admin` gehen ihn nichts an, auch nicht ihre Gruppennamen.
+ */
+export function globalFuerMandant(
+  k: Konfiguration,
+  e: NonNullable<ReturnType<typeof oidcEinstellungen>>,
+  slug: string,
+): MandantOidcGlobal {
+  const gruppen = Object.entries(k.SEATMETER_OIDC_GRUPPEN ?? {}).flatMap(([gruppe, ziele]) => {
+    const rollen = ziele.flatMap((z) =>
+      'plattform_admin' in z || z.mandant !== slug ? [] : [z.rolle],
+    );
+    return rollen.length > 0 ? [{ gruppe, rollen: [...new Set(rollen)] }] : [];
+  });
+  return {
+    issuer: e.issuer,
+    client_id: e.clientId,
+    bezeichnung: k.SEATMETER_OIDC_BEZEICHNUNG,
+    scopes: e.scopes,
+    redirect_uri: e.redirect,
+    gruppen: gruppen.sort((a, b) => a.gruppe.localeCompare(b.gruppe)),
+  };
 }
 
 /** Nur Pfade im Dashboard als Ziel nach der Anmeldung (keine offenen Weiterleitungen). */
@@ -171,6 +197,7 @@ export const oidcPlugin: SeatmeterPlugin = {
       redirectUri: redirect,
       startPfad: OIDC_START,
       cache,
+      globalFuer: (slug) => (einstellungen ? globalFuerMandant(ee, einstellungen, slug) : null),
     });
 
     /** Discovery des globalen Anbieters einmal je Prozess; schlägt sie fehl, beim nächsten Versuch erneut. */

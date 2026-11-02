@@ -19,7 +19,7 @@ Authorization Code mit PKCE (S256), `openid-client` 6, Client-Authentifizierung 
 - Gruppen → Rollen nur mit `SEATMETER_OIDC_GRUPPEN`: Rollen aus Gruppen tragen `rolle.quelle = 'oidc'` (Kern-Migration 0013) bzw. (mit ee) Plattform-Admin mit `quelle = 'oidc'` über `AuthErweiterung.plattformAdminAbgleichen`; ohne ee bleibt das Ziel `plattform_admin` wirkungslos und werden beim nächsten Login ohne die Gruppe entzogen; manuell vergebene Rollen bleiben. Unbekannte Mandanten-Slugs werden protokolliert und übersprungen.
 - `POST /api/v1/auth/oidc/logout`: Sitzung löschen; `{ weiter }` ist die end_session-URL, wenn der Provider eine anbietet (Authelia 4.39: nein).
 - Anmeldeseite: `GET /api/v1/auth/anbieter` nennt den Knopf, sobald die Konfiguration vollständig ist. Der Header-Modus des Kerns (Authelia `forward_auth`) bleibt unverändert nutzbar.
-- Konten des globalen Anbieters tragen seit Kern-Migration 0019 `benutzer.oidc_issuer` (= `SEATMETER_OIDC_ISSUER`; ältere Konten mit `NULL` bekommen ihn beim nächsten Login). Rollen in Mandanten mit eigenem aktivem Anmeldedienst entzieht der globale Abgleich nicht, solange `SEATMETER_OIDC_GRUPPEN` den Mandanten nicht selbst nennt.
+- Konten des globalen Anbieters tragen seit Kern-Migration 0019 `benutzer.oidc_issuer` (= `SEATMETER_OIDC_ISSUER`; ältere Konten mit `NULL` bekommen ihn beim nächsten Login). Rollen in Mandanten mit eigenem aktivem Anmeldedienst entzieht der globale Abgleich nicht, solange keine Gruppe des Kontos laut `SEATMETER_OIDC_GRUPPEN` auf den Mandanten zeigt; hat das Konto eine solche Gruppe, gleicht er den Mandanten wie sonst ab (`oidc-global-anzeige.test.ts`).
 
 ### OIDC je Mandant (SSO je Mandant, Phase 5a)
 
@@ -27,7 +27,7 @@ Einrichtung für Kunden: `docs/SSO-und-SCIM.md`. Tabelle `mandant_oidc` (Migrati
 
 | Route | Wer | Inhalt |
 |---|---|---|
-| `GET /api/v1/mandant/oidc` | Mandanten-Admin, Plattform-Admin (ee) | `{ konfiguration \| null (mit client_secret_gesetzt, nie das Secret), redirect_uri, start_url }` |
+| `GET /api/v1/mandant/oidc` | Mandanten-Admin, Plattform-Admin (ee) | `{ konfiguration \| null (mit client_secret_gesetzt, nie das Secret), global, redirect_uri, start_url }`; `global` ist `null` oder der aktive Anbieter aus `SEATMETER_OIDC_*` zum Lesen: `{ issuer, client_id, bezeichnung, scopes, redirect_uri, gruppen: [{ gruppe, rollen }] }`, ohne Secret, von `SEATMETER_OIDC_GRUPPEN` nur Ziele auf diesen Mandanten, nie `plattform_admin` |
 | `PUT …/oidc` | wie GET | `{ issuer (https, http nur Loopback für Tests), client_id, client_secret? (beim ersten Mal Pflicht: 400 client_secret_fehlt), scopes?, bezeichnung, gruppen_rollen?, aktiv? }`; Audit nennt nur geänderte Felder |
 | `DELETE …/oidc` | wie GET | entfernt die Konfiguration |
 | `POST …/oidc/pruefen` | wie GET | Discovery mit 8 s Timeout: `{ ok, fehler, issuer, endpunkte, geprueft }`, setzt `zuletzt_geprueft` |
@@ -37,3 +37,4 @@ Einrichtung für Kunden: `docs/SSO-und-SCIM.md`. Tabelle `mandant_oidc` (Migrati
 - Fehler im Anmeldeablauf antworten Browsern (`Accept: text/html`) mit einer Seite „Anmeldung nicht möglich“ (Code in `data-code`), sonst JSON `{ code, fehler }`.
 - Anmeldeseite (Kern-Haken `AuthProvider.anmeldeZiel`): `GET /api/v1/auth/anbieter?email=<adresse>` liefert für eine verifizierte Domain mit aktiver Konfiguration `oidc: { bezeichnung, start_url }`, `?mandant=<slug>` dasselbe über das Kürzel, sonst `oidc: null`. Je Adresse 20 Abfragen auf einmal, danach 30 je Minute (429).
 - Abmelden: `end_session` des Anmeldedienstes, über den das Konto angemeldet ist (Issuer des Kontos = Issuer des aktiven Mandanten), sonst des globalen Anbieters.
+- Neben dem globalen Anbieter: Sein Knopf bleibt auf der Anmeldeseite, die Anbindung des Mandanten erreicht man über eine verifizierte Domain oder das Kürzel. Mit anderem Issuer entsteht dort ein eigenes Konto ohne die bisherigen Rollen, denn ein schon verknüpftes Konto wird nicht übernommen; mit gleichem Issuer bleibt es dasselbe Konto, und die Gruppen der Anbindung gleichen seine OIDC-Rollen ab. Die Seite „SSO und Konten“ nennt das, sobald `global` gesetzt ist (`oidc-global-anzeige.test.ts`).

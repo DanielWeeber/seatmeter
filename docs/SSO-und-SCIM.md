@@ -2,9 +2,23 @@
 
 Stand 2026-10-24. SSO, Domains, Konten und SCIM gehören zum Kern (Apache-2.0) und brauchen keine Lizenz. Nur das Kontenkontingent und der Plattform-Admin gehören zur Mandantenfähigkeit (ee).
 
-Jeder Mandant (Organisation mit Vertrag) richtet seinen eigenen Anmeldedienst ein. Es gibt **einen Host** für alle Mandanten: Die Anmeldeseite fragt zuerst die E-Mail-Adresse; gehört deren Domain verifiziert zu einem Mandanten, führt „Weiter zu <Bezeichnung>“ zum Anmeldedienst dieses Mandanten. Alternativ meldet man sich über das **Mandanten-Kürzel** (Slug) an. Subdomains je Mandant gibt es nicht. Der globale Anbieter des Betreibers (`SEATMETER_OIDC_*`, siehe `packages/server/src/oidc/README.md`) bleibt daneben unverändert.
+Jeder Mandant (Organisation mit Vertrag) richtet seinen eigenen Anmeldedienst ein. Es gibt **einen Host** für alle Mandanten: Die Anmeldeseite fragt zuerst die E-Mail-Adresse; gehört deren Domain verifiziert zu einem Mandanten, führt „Weiter zu <Bezeichnung>“ zum Anmeldedienst dieses Mandanten. Alternativ meldet man sich über das **Mandanten-Kürzel** (Slug) an. Subdomains je Mandant gibt es nicht. Der globale Anbieter des Betreibers (`SEATMETER_OIDC_*`, siehe `packages/server/src/oidc/README.md`) bleibt daneben bestehen.
 
 Eingerichtet wird alles im Dashboard unter **Einrichtung → SSO und Konten** (nur Mandanten-Admins; mit der Mandantenfähigkeit (ee) sieht der Plattform-Admin dieselbe Seite für jeden Mandanten). Die API dazu liegt unter `/api/v1/mandant/…` (z. B. `/api/v1/mandant/oidc`, `/api/v1/mandant/domains`, `/api/v1/mandant/konten`, `/api/v1/mandant/scim-tokens`).
+
+## Anmeldung über die Serverkonfiguration
+
+Ist OIDC über `SEATMETER_OIDC_*` eingerichtet, zeigt **Einrichtung → SSO und Konten** das lesend an: Bezeichnung, Issuer, Client-ID, Scopes, Redirect-URI und die Gruppen, die laut `SEATMETER_OIDC_GRUPPEN` auf diesen Mandanten zeigen. Das Client-Secret steht nirgends, Zuordnungen anderer Mandanten und `plattform_admin` auch nicht. Ändern lässt sich das nur in den Einstellungen des Servers.
+
+- **Keine Gruppe für diesen Mandanten:** Die Seite sagt es. Über diese Anmeldung bekommt dann niemand eine Rolle; Rollen vergeben Sie unter „Konten“.
+- **Das reicht meist:** Eine eigene Anbindung ist nicht nötig, wenn dieser Anbieter passt. Das Formular dafür ist darum zugeklappt.
+
+Was eine **eigene Anbindung daneben** ändert:
+
+- **Anmeldeseite:** Der Knopf „Mit <Bezeichnung> anmelden“ der Serverkonfiguration bleibt. Wer eine verifizierte E-Mail-Domain dieses Mandanten oder sein Kürzel eingibt, kommt zur eigenen Anbindung. Eine inaktive Anbindung ändert nichts.
+- **Konten:** Mit einem anderen Issuer entsteht über die eigene Anbindung ein eigenes Konto, auch bei gleicher E-Mail-Adresse (Anmeldename `oidc:<slug>:<sub>`), ohne die bisherigen Rollen. Das alte Konto bleibt mit seinen Rollen bestehen. Mit demselben Issuer bleibt es ein Konto, und sind bei der eigenen Anbindung Gruppen eingetragen, gleichen sie seine OIDC-Rollen ab, auch solche aus der Serverkonfiguration.
+- **Rollen aus der Serverkonfiguration:** Solange die eigene Anbindung aktiv ist, entzieht eine Anmeldung über die Serverkonfiguration in diesem Mandanten keine Rolle mehr, wenn keine Gruppe des Kontos mehr auf ihn zeigt. Das müssen Sie dann unter „Konten“ tun. Zeigt noch eine Gruppe auf den Mandanten, wird wie sonst abgeglichen.
+- **Abmelden:** Es folgt dem Anmeldedienst des Kontos: Ein Konto der Serverkonfiguration meldet sich dort ab, auch wenn der Mandant eine eigene Anbindung hat.
 
 ## Teil 1: OIDC je Mandant
 

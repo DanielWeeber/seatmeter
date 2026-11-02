@@ -2,6 +2,16 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { json, ME_ADMIN, ME_LESER, rendereApp, type Routen } from '../../test/index';
 import { describe, expect, it } from 'vitest';
+import {
+  KNOPF_EIGENE,
+  TEXT_INAKTIV,
+  TEXT_KEINE_GRUPPEN,
+  TEXT_KONTEN,
+  TEXT_SERVER,
+  textBeide,
+  textWeg,
+  TITEL_SERVER,
+} from './Oidc';
 
 const ME = ME_ADMIN;
 /** Kern-Route der Mandantenverwaltung für den aktiven Mandanten `m-1`. */
@@ -71,6 +81,103 @@ function render(routen: Routen, me: unknown = ME) {
     ...routen,
   });
 }
+
+describe('OIDC: Serverkonfiguration und eigene Anbindung', () => {
+  const GLOBAL = {
+    issuer: 'https://idp-server.example.org',
+    client_id: 'seatmeter-server',
+    bezeichnung: 'Firmen-Login',
+    scopes: 'openid profile email groups',
+    redirect_uri: 'https://seatmeter.example.org/api/v1/auth/oidc/callback',
+    gruppen: [
+      { gruppe: 'sm-leitung', rollen: ['mandanten_admin', 'controller'] },
+      { gruppe: 'sm-lesen', rollen: ['controller'] },
+    ],
+  };
+  const NOCH_KEINE = /Noch keine OIDC-Anbindung/;
+  const formular = () => screen.queryByLabelText('Issuer-URL');
+
+  it('nur Serverkonfiguration: Werte und Gruppen lesend, kein „noch keine“, Formular zugeklappt', async () => {
+    render({ [M('/oidc')]: json({ ...OIDC_LEER, global: GLOBAL }) });
+    expect(await screen.findByRole('heading', { name: TITEL_SERVER })).toBeTruthy();
+    for (const wert of [
+      'Firmen-Login',
+      'https://idp-server.example.org',
+      'seatmeter-server',
+      'openid profile email groups',
+      'https://seatmeter.example.org/api/v1/auth/oidc/callback',
+    ]) {
+      expect(screen.getByText(wert), wert).toBeTruthy();
+    }
+    expect(screen.getByText(TEXT_SERVER)).toBeTruthy();
+    const tabelle = screen.getByRole('table', { name: 'Gruppen der Serverkonfiguration' });
+    expect(within(tabelle).getByText('sm-leitung')).toBeTruthy();
+    expect(within(tabelle).getByText('mandanten_admin, controller')).toBeTruthy();
+    expect(screen.queryByText(TEXT_KEINE_GRUPPEN)).toBeNull();
+    expect(screen.queryByText(NOCH_KEINE)).toBeNull();
+    // Lesend: Es gibt kein Feld für die Werte der Serverkonfiguration, und das Formular ist zu.
+    expect(formular()).toBeNull();
+    expect(screen.getByText(new RegExp(textWeg('Firmen-Login').slice(0, 40)))).toBeTruthy();
+    expect(screen.getByText(new RegExp(TEXT_KONTEN.slice(0, 40)))).toBeTruthy();
+
+    const knopf = screen.getByRole('button', { name: KNOPF_EIGENE });
+    expect(knopf.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(knopf);
+    expect(knopf.getAttribute('aria-expanded')).toBe('true');
+    expect(formular()).toBeTruthy();
+    fireEvent.click(knopf);
+    expect(formular()).toBeNull();
+  });
+
+  it('Serverkonfiguration ohne Gruppe für diesen Mandanten: sagt deutlich, dass niemand eine Rolle bekommt', async () => {
+    render({ [M('/oidc')]: json({ ...OIDC_LEER, global: { ...GLOBAL, gruppen: [] } }) });
+    const warnung = await screen.findByText(TEXT_KEINE_GRUPPEN);
+    expect(warnung.getAttribute('role')).toBe('alert');
+    expect(screen.queryByRole('table', { name: 'Gruppen der Serverkonfiguration' })).toBeNull();
+  });
+
+  it('nur eigene Anbindung: wie bisher, keine Serverkonfiguration, kein Klappknopf', async () => {
+    render({ [M('/oidc')]: json({ ...OIDC_GESETZT, global: null }) });
+    await waitFor(() => expect(formular()).toBeTruthy());
+    expect(screen.queryByRole('heading', { name: TITEL_SERVER })).toBeNull();
+    expect(screen.queryByRole('button', { name: KNOPF_EIGENE })).toBeNull();
+    expect(screen.queryByText(NOCH_KEINE)).toBeNull();
+    expect(screen.queryByText(new RegExp(TEXT_KONTEN.slice(0, 40)))).toBeNull();
+  });
+
+  it('beide: beide stehen da, und es steht dabei, welche wann gilt', async () => {
+    render({ [M('/oidc')]: json({ ...OIDC_GESETZT, global: GLOBAL }) });
+    expect(await screen.findByRole('heading', { name: TITEL_SERVER })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Eigene Anbindung dieses Mandanten' })).toBeTruthy();
+    expect(formular()).toBeTruthy();
+    expect(screen.queryByRole('button', { name: KNOPF_EIGENE })).toBeNull();
+    const text = screen.getByText(/Beide gelten/).textContent ?? '';
+    expect(text).toContain(textBeide('Firmen-Login', 'Beispiel SSO'));
+    expect(text).toContain(TEXT_KONTEN);
+    expect(screen.queryByText(NOCH_KEINE)).toBeNull();
+  });
+
+  it('beide, eigene inaktiv: Es gilt nur die Serverkonfiguration', async () => {
+    render({
+      [M('/oidc')]: json({
+        ...OIDC_GESETZT,
+        konfiguration: { ...OIDC_GESETZT.konfiguration, aktiv: false },
+        global: GLOBAL,
+      }),
+    });
+    expect(await screen.findByText(TEXT_INAKTIV)).toBeTruthy();
+    expect(screen.queryByText(/Beide gelten/)).toBeNull();
+    expect(formular()).toBeTruthy();
+  });
+
+  it('keine von beiden: Hinweis und offenes Formular wie bisher', async () => {
+    render({ [M('/oidc')]: json({ ...OIDC_LEER, global: null }) });
+    expect(await screen.findByText(NOCH_KEINE)).toBeTruthy();
+    expect(formular()).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: TITEL_SERVER })).toBeNull();
+    expect(screen.queryByRole('button', { name: KNOPF_EIGENE })).toBeNull();
+  });
+});
 
 describe('SSO und Konten', () => {
   it('läuft im Kern ohne ee: /me ohne `ee`, Abschnitte über /api/v1/mandant/…', async () => {

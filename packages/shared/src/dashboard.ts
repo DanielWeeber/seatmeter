@@ -17,6 +17,20 @@ export const ROLLEN = [
 export const rolleSchema = z.enum(ROLLEN);
 export type Rolle = z.infer<typeof rolleSchema>;
 
+/**
+ * Anbieter aus `SEATMETER_OIDC_*`, wie ihn `GET /api/v1/mandant/oidc` einem Mandanten zeigt: nur lesen, nie das Secret.
+ * `gruppen` nennt nur Zuordnungen auf diesen Mandanten; leer heißt, über diese Anmeldung bekommt niemand eine Rolle.
+ */
+export const mandantOidcGlobalSchema = z.object({
+  issuer: z.string(),
+  client_id: z.string(),
+  bezeichnung: z.string(),
+  scopes: z.string(),
+  redirect_uri: z.string(),
+  gruppen: z.array(z.object({ gruppe: z.string(), rollen: z.array(rolleSchema) })),
+});
+export type MandantOidcGlobal = z.infer<typeof mandantOidcGlobalSchema>;
+
 /** Hat das Konto im Mandanten ausschließlich die Rolle `entwickler` (keine Auswertungen)? */
 export function nurEntwickler(rollen: readonly Rolle[]): boolean {
   return rollen.length > 0 && rollen.every((r) => r === 'entwickler');

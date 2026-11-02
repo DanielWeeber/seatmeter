@@ -1,12 +1,13 @@
 // Routen der OIDC-Konfiguration je Mandant (Mandanten-Admin, über ee auch Plattform-Admin; `?mandant=<id>`):
 //   GET/PUT/DELETE /api/v1/mandant/oidc, POST …/oidc/pruefen (Discovery, ohne Anmeldung).
-// Das Client-Secret steht nur verschlüsselt in der Datenbank und nie in einer Antwort.
+// Das Client-Secret steht nur verschlüsselt in der Datenbank und nie in einer Antwort. `global` zeigt lesend den Anbieter aus
+// `SEATMETER_OIDC_*`, damit niemand eine Anmeldung einrichtet, die es schon gibt.
 import { protokolliere } from '../audit/protokoll.js';
 import { requireAnmeldung } from '../auth/kontext.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
 import { verschluessele } from '../krypto.js';
-import { ROLLEN } from '@seatmeter/shared';
+import { ROLLEN, type MandantOidcGlobal } from '@seatmeter/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -84,24 +85,27 @@ export function registriereKonfigurationRouten(
     redirectUri: string | null;
     startPfad: string;
     cache: DiscoveryCache;
+    /** Anbieter aus `SEATMETER_OIDC_*` für die Anzeige, aus Sicht dieses Mandanten; `null`, wenn er nicht aktiv ist. */
+    globalFuer: (slug: string) => MandantOidcGlobal | null;
   },
 ): void {
   const basis = '/api/v1/mandant/oidc';
   const v = verwaltung(app.seatmeterAuth);
   const opt = { preHandler: requireAnmeldung };
-  const startUrl = async (trx: Trx) => {
+  const antwort = async (trx: Trx) => {
     const m = await trx.selectFrom('mandant').select('slug').executeTakeFirstOrThrow();
-    return `${angaben.startPfad}?mandant=${encodeURIComponent(m.slug)}`;
+    return {
+      konfiguration: await ausgabe(trx),
+      global: angaben.globalFuer(m.slug),
+      redirect_uri: angaben.redirectUri,
+      start_url: `${angaben.startPfad}?mandant=${encodeURIComponent(m.slug)}`,
+    };
   };
 
   app.get(basis, opt, async (request, reply) => {
     const m = await verwalteterMandant(request, reply);
     if (!m) return reply;
-    return withMandant(db, m.id, async (trx) => ({
-      konfiguration: await ausgabe(trx),
-      redirect_uri: angaben.redirectUri,
-      start_url: await startUrl(trx),
-    }));
+    return withMandant(db, m.id, antwort);
   });
 
   app.put(basis, opt, async (request, reply) => {
@@ -159,11 +163,7 @@ export function registriereKonfigurationRouten(
         aktion: VERWALTUNG_AUDIT.oidcGeaendert,
         objekt: `mandant_oidc: ${felder.join(', ') || 'unverändert'}`,
       });
-      return {
-        konfiguration: await ausgabe(trx),
-        redirect_uri: angaben.redirectUri,
-        start_url: await startUrl(trx),
-      };
+      return antwort(trx);
     });
     if (!ergebnis)
       return reply.code(400).send({
