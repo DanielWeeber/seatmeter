@@ -16,8 +16,10 @@ export interface PluginKontext {
 export interface JobDefinition {
   /** Eindeutiger Name, z. B. `aggregation.tag`. */
   name: string;
-  /** Cron-Ausdruck (UTC), z. B. `15 2 * * *`. */
-  zeitplan: string;
+  /** Cron-Ausdruck (UTC), z. B. `15 2 * * *`; oder aus der Konfiguration, `null` = nicht planen, `--einmal` geht weiter. */
+  zeitplan: string | ((konfiguration: Konfiguration) => string | null);
+  /** Läuft er schon, bleibt das ohne Zeile in `job_lauf`: Bei häufigen Jobs und mehreren Instanzen wäre das nur Rauschen. */
+  still?: boolean;
   /** Rückgabe (nur Zähler, JSON) landet in `job_lauf.ergebnis`. */
   ausfuehren(ctx: PluginKontext): Promise<unknown>;
 }

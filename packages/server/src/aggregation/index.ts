@@ -1,4 +1,4 @@
-// Modul aggregation: Jobs `aggregation.tag` und `partitionen.anlegen`, Neuaufbau auf Anforderung und
+// Modul aggregation: Jobs `aggregation.tag`, `aggregation.nah` und `partitionen.anlegen`, Neuaufbau auf Anforderung und
 // die Dashboard-Lesezugriffe (Übersicht, Projekte, Personen, Datenqualität).
 import { zeitraumAbfrageSchema } from '@seatmeter/shared';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
@@ -13,10 +13,12 @@ import {
   aggregiereTage,
   AGGREGATION_TAGE,
 } from './job.js';
+import { AGGREGATION_NAH, aggregationNahJob, aggregationNahZeitplan } from './nah.js';
 import { dashboardRouten } from './routen.js';
 import { plusTage } from './tage.js';
 
 export * from './job.js';
+export * from './nah.js';
 export { dashboardRouten, MINDESTGRUPPE } from './routen.js';
 
 /** Höchstens so viele Tage je Neuaufbau auf Anforderung. */
@@ -29,6 +31,12 @@ export const aggregationPlugin: SeatmeterPlugin = {
       name: 'aggregation.tag',
       zeitplan: '15 2 * * *',
       ausfuehren: (ctx) => aggregationTagJob(ctx),
+    },
+    {
+      name: AGGREGATION_NAH,
+      zeitplan: aggregationNahZeitplan,
+      still: true,
+      ausfuehren: (ctx) => aggregationNahJob(ctx),
     },
     {
       name: 'partitionen.anlegen',

@@ -37,6 +37,7 @@ Ein Container `server` (API, Ingest, Dashboard) und ein Postgres 18. Der Server 
 | `SEATMETER_WEB_DIST` | (Image) | Verzeichnis mit dem Dashboard-Build; im Image `/app/web`. Leer = nur API |
 | `SEATMETER_INGEST_URL` | empfohlen | Öffentliche Basis-URL des Ingest-Hosts (z. B. `https://ingest.example.org`) für die Agent-Konfiguration und die Seite „Ausrollen“; ohne sie leitet der Server die URL aus der Anfrage ab (Dashboard-Host, meist falsch für die Rechner) |
 | `SEATMETER_AGENT_RELEASE_URL` | nein | Download-Ordner des Agent-Releases, z. B. `https://<forgejo-host>/<org>/seatmeter/releases/download/v0.1.0`; die Seite „Ausrollen“ baut daraus den Installationsbefehl |
+| `SEATMETER_AGGREGATION_INTERVALL_MIN` | nein | Abstand des Jobs `aggregation.nah` in Minuten: 0 (aus) bis 60, Standard 5 |
 | `SEATMETER_TRUST_PROXY` | hinter Proxy | Woher die Client-IP für Ratenlimits und Anmelde-Sperre kommt: leer/`aus` = Socket-Adresse (X-Forwarded-For wird ignoriert); `1` (Anzahl der Proxy-Stufen) oder kommagetrennte IPs/CIDRs der Proxys = aus `X-Forwarded-For`. Nur setzen, wenn alle Anfragen über den Proxy kommen und er X-Forwarded-For selbst setzt (Caddy tut das) |
 | `SEATMETER_RATE_OTLP`, `SEATMETER_RATE_AGENT`, `SEATMETER_RATE_IP`, `SEATMETER_RATE_FEHLVERSUCHE`, `SEATMETER_RATE_ENROLL`, `SEATMETER_RATE_ENROLL_FEHLVERSUCHE` | nein | Ratenlimits der Ingest-Pfade als `<anfragen_pro_minute>/<stoss>`, siehe „Ratenlimits“ |
 | `SEATMETER_PLUGINS` | nein | kommagetrennte Plugin-Module (ee: Mandantenfähigkeit, nur mit Lizenz) |
@@ -216,6 +217,7 @@ Der Server plant seine Jobs selbst (Cron in UTC, Advisory-Lock, Protokoll in `jo
 | `partitionen.anlegen` | täglich 00:05 | Monatspartitionen von `anfrage` |
 | `merge.ab` | alle 5 Minuten | Zusammenführung A/B (Heuristik für `msg:`-Schlüssel, Modul `merge`) |
 | `aggregation.tag` | täglich 02:15 | Tagesaggregat der letzten 35 Tage |
+| `aggregation.nah` | alle 5 Minuten, `SEATMETER_AGGREGATION_INTERVALL_MIN` (0 = aus) | Tagesaggregat von heute und gestern, sonst stünde die Nutzung erst am nächsten Morgen im Dashboard |
 | `kurs.ezb` | täglich 03:00 | EZB-Kurs USD/EUR (Monatsmittel endgültig, laufender Monat vorläufig aus den Tageskursen); braucht ausgehendes HTTPS zu `data-api.ecb.europa.eu` |
 | `kalkulation.monatsabschluss` | am 1. um 03:30 | Vormonat je Mandant einfrieren (vorhandene Abschlüsse bleiben) |
 | `aufbewahrung.loeschen` | täglich 02:45 | Löschläufe laut Fristen, protokolliert in `loeschlauf` |

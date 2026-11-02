@@ -5,6 +5,7 @@
 import type { KalkulationAntwort, ProjektpreisZeile } from '@seatmeter/shared';
 import { sql, type Transaction } from 'kysely';
 import { AUDIT_AKTION, protokolliere } from '../audit/protokoll.js';
+import { aggregationSperren } from '../aggregation/sperre.js';
 import { heuteIn } from '../aggregation/tage.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
@@ -48,6 +49,8 @@ export async function schliesseMonat(
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`monatsabschluss:${mandantId}:${tag}`}, 0))`.execute(
       trx,
     );
+    // Während des Abschlusses ändert sich das Tagesaggregat nicht: Beide Stände rechnen auf derselben Grundlage.
+    await aggregationSperren(trx, mandantId);
     const vorhanden = await trx
       .selectFrom('monatsabschluss')
       .select((eb) => eb.fn.countAll<number>().as('n'))

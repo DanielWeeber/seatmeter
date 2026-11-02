@@ -221,7 +221,14 @@ export async function aufbewahrungJob(
     .deleteFrom('job_lauf')
     .where('gestartet', '<', new Date(jetzt.getTime() - 90 * 86_400_000))
     .executeTakeFirst();
-  ergebnis.job_laeufe = Number(laeufe.numDeletedRows);
+  // Der häufige Lauf schreibt 288 Zeilen am Tag: Erfolgreiche nur eine Woche, Fehler bleiben wie alle anderen.
+  const nah = await db
+    .deleteFrom('job_lauf')
+    .where('job', '=', 'aggregation.nah')
+    .where('status', '=', 'ok')
+    .where('gestartet', '<', new Date(jetzt.getTime() - 7 * 86_400_000))
+    .executeTakeFirst();
+  ergebnis.job_laeufe = Number(laeufe.numDeletedRows) + Number(nah.numDeletedRows);
   return ergebnis;
 }
 

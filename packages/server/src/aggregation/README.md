@@ -7,10 +7,17 @@ Tagesaggregat und Dashboard-Lesezugriffe (Architektur §2.3, §2.4, §3.1, §5, 
 | Job | Zeitplan (UTC) | Inhalt |
 |---|---|---|
 | `aggregation.tag` | `15 2 * * *` | je Mandant heute und die 34 Tage davor (Mandanten-Zeitzone) neu aufbauen |
+| `aggregation.nah` | alle `SEATMETER_AGGREGATION_INTERVALL_MIN` Minuten (Standard 5, 0 = aus, höchstens 60), eine Minute nach `merge.ab` | je Mandant heute und gestern, siehe unten |
 | `partitionen.anlegen` | `5 0 * * *` | `anfragePartitionenAnlegen` (laufender und nächster Monat) |
 
 `aggregiereTage(db, mandantId, von, bis)`: je Tag eine Transaktion, Zeilen des Tages löschen und aus `anfrage` (nur `zaehlt_als_abo`) neu schreiben, gruppiert nach (tag, person, projekt, model, speed, auth_klasse). `speed` NULL → `normal`; „kein Fast-Modus“ heißt immer `normal` (Quelle A meldet `normal`, die Transkripte von B `standard`, das `agentAnfrageSchema` in shared bildet `standard` beim Ingest auf `normal` ab; Altzeilen gleicht Migration 0016 an).
 Schattenpreis je Anfrage mit `schattenpreis` aus `@seatmeter/shared` (Preis nach `ts` der Anfrage, effektive Preistabelle des Mandanten, `cache_write_annahme`), dann summiert. `cache_write_1h` = 1h-Anteil wie im Schattenpreis (bekannt aus Quelle B, sonst nach Annahme). `preis_version` = `global|mandant:<präfix>@<gueltig_ab>` (mehrere kommagetrennt), NULL ohne passenden Preis (Datenqualität „Modelle ohne Preis“). `abo_anteil` = 1 (Abzug der Überschreitung: ee, Phase 4).
+
+`aggregation.nah` (`nah.ts`) rechnet mit derselben Funktion `tagBerechnen`, also genau wie nachts; ein Test vergleicht jede Zeile und Spalte. Unterschiede: Ein Tag wird nur gerechnet, wenn sich eine Signatur über alle Eingaben geändert hat (Felder der Anfragen, Preise, `cache_write_annahme`; auch ohne neue Anfrage, `merge.ab` ändert Zeilen). Geschrieben werden nur geänderte Zeilen, in einer Transaktion je Mandant, also nie ein halber Stand. Die Signaturen liegen im Speicher des Prozesses, darum keine Migration; nach einem Neustart rechnet der erste Lauf einmal und schreibt nichts, wenn nichts anders ist. `issue_aggregat` liest den ganzen Monat und läuft darum höchstens stündlich: So lange kann „ohne Issue-Schlüssel“ auf der Issue-Seite tagsüber zu hoch stehen.
+
+Sperren: `pg_advisory_xact_lock` je Mandant (`sperre.ts`) hält der nächtliche Lauf je Tag, der Neuaufbau auf Anforderung und `schliesseMonat`; `aggregation.nah` versucht sie nur und überspringt den Mandanten. Läuft `aggregation.tag` oder `kalkulation.monatsabschluss` (nachgesehen in `pg_locks`, nie selbst gesperrt, das könnte den nächtlichen Lauf verdrängen), setzt der Lauf ganz aus. Überspringen schreibt keine Zeile in `job_lauf`. Scheitert ein Mandant, laufen die anderen weiter, und der Lauf endet mit Fehler. Erfolgreiche Läufe bleiben eine Woche in `job_lauf`.
+
+Abgeschlossene Monate bleiben unberührt: `monatsabschluss` und `katalog_abschluss` sind eigene Stände, das Tagesaggregat ihrer Tage folgt wie nachts. Budgets rechnen auf frischeren Daten: Ein Alarm kommt am selben Tag statt am nächsten Morgen, je Schwelle weiter genau einmal.
 
 ## Routen (alle mit Dashboard-Sitzung, Mandant aus der Sitzung, RLS über `withMandant`)
 

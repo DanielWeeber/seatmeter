@@ -25,6 +25,7 @@ export async function imJobLauf(
   name: string,
   ausloeser: Ausloeser,
   fn: () => Promise<unknown>,
+  o: { still?: boolean | undefined } = {},
 ): Promise<LaufErgebnis> {
   const { db } = ctx;
   return db.connection().execute(async (verbindung) => {
@@ -33,10 +34,12 @@ export async function imJobLauf(
       ok: boolean;
     }>`SELECT pg_try_advisory_lock(hashtext(${schluessel})) AS ok`.execute(verbindung);
     if (!lock.rows[0]?.ok) {
-      await db
-        .insertInto('job_lauf')
-        .values({ job: name, ausloeser, status: 'uebersprungen', beendet: new Date() })
-        .execute();
+      if (!o.still) {
+        await db
+          .insertInto('job_lauf')
+          .values({ job: name, ausloeser, status: 'uebersprungen', beendet: new Date() })
+          .execute();
+      }
       return { status: 'uebersprungen' };
     }
     const lauf = await db
@@ -81,7 +84,7 @@ export async function fuehreJobAus(
   if (!job) {
     throw new Error(`Unbekannter Job ${name}; vorhanden: ${jobs.map((j) => j.name).join(', ')}`);
   }
-  return imJobLauf(ctx, name, ausloeser, () => job.ausfuehren(ctx));
+  return imJobLauf(ctx, name, ausloeser, () => job.ausfuehren(ctx), { still: job.still });
 }
 
 /** Planer: prüft zu jeder vollen Minute (UTC), welche Jobs fällig sind. */
@@ -96,10 +99,12 @@ export class JobPlaner {
     private readonly log: FastifyBaseLogger,
   ) {
     const namen = new Set<string>();
-    this.plan = jobs.map((job) => {
+    this.plan = jobs.flatMap((job) => {
       if (namen.has(job.name)) throw new Error(`Job doppelt registriert: ${job.name}`);
       namen.add(job.name);
-      return { job, cron: parseCron(job.zeitplan) };
+      const ausdruck =
+        typeof job.zeitplan === 'function' ? job.zeitplan(ctx.konfiguration) : job.zeitplan;
+      return ausdruck === null ? [] : [{ job, cron: parseCron(ausdruck) }];
     });
   }
 
@@ -124,7 +129,9 @@ export class JobPlaner {
     for (const { job, cron } of this.plan) {
       if (!passt(cron, zeit) || this.laufend.has(job.name)) continue;
       gestartet.push(job.name);
-      const lauf = imJobLauf(this.ctx, job.name, 'plan', () => job.ausfuehren(this.ctx))
+      const lauf = imJobLauf(this.ctx, job.name, 'plan', () => job.ausfuehren(this.ctx), {
+        still: job.still,
+      })
         .then((e) => {
           if (e.status === 'fehler')
             this.log.error({ job: job.name, fehler: e.fehler }, 'Job fehlgeschlagen');

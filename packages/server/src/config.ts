@@ -166,6 +166,8 @@ export const konfigurationSchema = z.object({
   SEATMETER_AUTO_MANDANT: optional(z.string().min(1).max(63)),
   /** `aus` schaltet den Job-Planer ab (z. B. für zusätzliche Instanzen). */
   SEATMETER_JOBS: z.enum(['an', 'aus']).default('an'),
+  /** Abstand des Jobs `aggregation.nah` in Minuten (heute und gestern neu), 0 = aus. */
+  SEATMETER_AGGREGATION_INTERVALL_MIN: z.coerce.number().int().min(0).max(60).default(5),
   /** Client-IP hinter einem Reverse-Proxy aus X-Forwarded-For (sonst Socket-Adresse). */
   SEATMETER_TRUST_PROXY: trustProxy,
   // Ratenlimits der Ingest-Pfade (/otlp/v1/*, /api/ingest/v1/*, /api/agent/v1/*), je Prozess im Speicher.

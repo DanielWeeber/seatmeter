@@ -4,6 +4,7 @@
 // Aufgerufen vom Tagesaggregat (`aggregiereTage`) für jeden berührten Monat.
 import { aufteilen, schattenpreis, schluesselFiltern, type PreisZeile } from '@seatmeter/shared';
 import { sql, type Insertable } from 'kysely';
+import { aggregationSperren, aggregationSperreVersuchen } from '../aggregation/sperre.js';
 import { monatsGrenzen } from '../aggregation/tage.js';
 import type { Db } from '../db/db.js';
 import { withMandant } from '../db/mandant.js';
@@ -15,6 +16,7 @@ export interface IssueAggregatErgebnis {
   /** Monate, deren Beginn vor der Anfrage-Aufbewahrung liegt (Stand bleibt eingefroren). */
   eingefroren: string[];
   zeilen: number;
+  gesperrt?: boolean;
 }
 
 export interface IssueAggregatOptionen {
@@ -22,6 +24,26 @@ export interface IssueAggregatOptionen {
   annahme: '5m' | '1h';
   /** Ältester Tag mit vollständigen Einzelanfragen (Aufbewahrung). */
   ab: string;
+  /** Arbeitet gerade jemand am Mandanten: nicht warten, sondern `gesperrt` melden (Job `aggregation.nah`). */
+  nurWennFrei?: boolean;
+}
+
+const JE_SEITE = 1_000;
+
+interface IssueAnfrage {
+  ts: Date;
+  session_id: string | null;
+  projekt_id: string | null;
+  model: string;
+  speed: string | null;
+  inference_geo: string | null;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  cache_write_1h: number | null;
+  web_search: number;
+  issue_schluessel: string[] | null;
 }
 
 /** Monate `JJJJ-MM`, die der Zeitraum `von`..`bis` berührt. */
@@ -68,98 +90,96 @@ export async function aggregiereIssueMonate(
       continue;
     }
     await withMandant(db, mandantId, async (trx) => {
-      const m = await trx.selectFrom('mandant').select('issue_praefixe').executeTakeFirstOrThrow();
-      const anfragen = await trx
-        .selectFrom('anfrage')
-        .select([
-          'ts',
-          'session_id',
-          'projekt_id',
-          'model',
-          'speed',
-          'inference_geo',
-          'input',
-          'output',
-          'cache_read',
-          'cache_write',
-          'cache_write_1h',
-          'web_search',
-          'issue_schluessel',
-        ])
-        .where('tag', '>=', g.von)
-        .where('tag', '<', g.bisExklusiv)
-        .where('zaehlt_als_abo', '=', true)
-        .where(sql<boolean>`cardinality(issue_schluessel) > 0`)
-        .execute();
-
-      const gruppen = new Map<string, { zeile: Zeile; sitzungen: Set<string> }>();
-      for (const a of anfragen) {
-        const schluessel = schluesselFiltern(a.issue_schluessel ?? [], m.issue_praefixe);
-        if (schluessel.length === 0) continue;
-        const s = schattenpreis(
-          {
-            model: a.model,
-            ts: a.ts,
-            input: a.input,
-            output: a.output,
-            cache_read: a.cache_read,
-            cache_write: a.cache_write,
-            cache_write_1h: a.cache_write_1h,
-            speed: a.speed,
-            inference_geo: a.inference_geo,
-          },
-          o.preise,
-          o.annahme,
-        );
-        const n = schluessel.length;
-        const teile = {
-          input: aufteilen(a.input, n),
-          output: aufteilen(a.output, n),
-          cache_read: aufteilen(a.cache_read, n),
-          cache_write: aufteilen(a.cache_write, n),
-          // 1h-Anteil wie im Tagesaggregat: bekannt (Quelle B) oder nach cache_write_annahme.
-          cache_write_1h: aufteilen(
-            a.cache_write_1h ?? (o.annahme === '1h' ? a.cache_write : 0),
-            n,
-          ),
-          web_search: aufteilen(a.web_search, n),
-          schatten: aufteilen(s?.usdMicros ?? 0, n),
-        };
-        schluessel.forEach((k, i) => {
-          const id = `${a.projekt_id ?? ''}|${k}`;
-          let gr = gruppen.get(id);
-          if (!gr) {
-            gr = {
-              zeile: {
-                mandant_id: mandantId,
-                monat: g.von,
-                projekt_id: a.projekt_id,
-                schluessel: k,
-                input: 0,
-                output: 0,
-                cache_read: 0,
-                cache_write: 0,
-                cache_write_1h: 0,
-                web_search: 0,
-                anfragen: 0,
-                schatten_usd_micros: 0,
-              },
-              sitzungen: new Set(),
-            };
-            gruppen.set(id, gr);
-          }
-          const z = gr.zeile;
-          z.input += teile.input[i] ?? 0;
-          z.output += teile.output[i] ?? 0;
-          z.cache_read += teile.cache_read[i] ?? 0;
-          z.cache_write += teile.cache_write[i] ?? 0;
-          z.cache_write_1h += teile.cache_write_1h[i] ?? 0;
-          z.web_search += teile.web_search[i] ?? 0;
-          z.schatten_usd_micros += teile.schatten[i] ?? 0;
-          z.anfragen += 1;
-          if (a.session_id) gr.sitzungen.add(a.session_id);
-        });
+      if (!o.nurWennFrei) await aggregationSperren(trx, mandantId);
+      else if (!(await aggregationSperreVersuchen(trx, mandantId))) {
+        ergebnis.gesperrt = true;
+        return;
       }
+      const m = await trx.selectFrom('mandant').select('issue_praefixe').executeTakeFirstOrThrow();
+      const gruppen = new Map<string, { zeile: Zeile; sitzungen: Set<string> }>();
+      // Seitenweise über einen Cursor: Ein ganzer Monat auf einmal hielte den Prozess an, in dem auch Push und Ingest laufen.
+      await sql`
+        DECLARE monat_anfragen NO SCROLL CURSOR FOR
+        SELECT ts, session_id, projekt_id, model, speed, inference_geo, input, output, cache_read, cache_write,
+          cache_write_1h, web_search, issue_schluessel
+        FROM anfrage
+        WHERE tag >= ${g.von}::date AND tag < ${g.bisExklusiv}::date AND zaehlt_als_abo
+          AND cardinality(issue_schluessel) > 0`.execute(trx);
+      for (;;) {
+        const seite =
+          await sql<IssueAnfrage>`FETCH ${sql.raw(String(JE_SEITE))} FROM monat_anfragen`.execute(
+            trx,
+          );
+        for (const a of seite.rows) {
+          const schluessel = schluesselFiltern(a.issue_schluessel ?? [], m.issue_praefixe);
+          if (schluessel.length === 0) continue;
+          const s = schattenpreis(
+            {
+              model: a.model,
+              ts: a.ts,
+              input: a.input,
+              output: a.output,
+              cache_read: a.cache_read,
+              cache_write: a.cache_write,
+              cache_write_1h: a.cache_write_1h,
+              speed: a.speed,
+              inference_geo: a.inference_geo,
+            },
+            o.preise,
+            o.annahme,
+          );
+          const n = schluessel.length;
+          const teile = {
+            input: aufteilen(a.input, n),
+            output: aufteilen(a.output, n),
+            cache_read: aufteilen(a.cache_read, n),
+            cache_write: aufteilen(a.cache_write, n),
+            // 1h-Anteil wie im Tagesaggregat: bekannt (Quelle B) oder nach cache_write_annahme.
+            cache_write_1h: aufteilen(
+              a.cache_write_1h ?? (o.annahme === '1h' ? a.cache_write : 0),
+              n,
+            ),
+            web_search: aufteilen(a.web_search, n),
+            schatten: aufteilen(s?.usdMicros ?? 0, n),
+          };
+          schluessel.forEach((k, i) => {
+            const id = `${a.projekt_id ?? ''}|${k}`;
+            let gr = gruppen.get(id);
+            if (!gr) {
+              gr = {
+                zeile: {
+                  mandant_id: mandantId,
+                  monat: g.von,
+                  projekt_id: a.projekt_id,
+                  schluessel: k,
+                  input: 0,
+                  output: 0,
+                  cache_read: 0,
+                  cache_write: 0,
+                  cache_write_1h: 0,
+                  web_search: 0,
+                  anfragen: 0,
+                  schatten_usd_micros: 0,
+                },
+                sitzungen: new Set(),
+              };
+              gruppen.set(id, gr);
+            }
+            const z = gr.zeile;
+            z.input += teile.input[i] ?? 0;
+            z.output += teile.output[i] ?? 0;
+            z.cache_read += teile.cache_read[i] ?? 0;
+            z.cache_write += teile.cache_write[i] ?? 0;
+            z.cache_write_1h += teile.cache_write_1h[i] ?? 0;
+            z.web_search += teile.web_search[i] ?? 0;
+            z.schatten_usd_micros += teile.schatten[i] ?? 0;
+            z.anfragen += 1;
+            if (a.session_id) gr.sitzungen.add(a.session_id);
+          });
+        }
+        if (seite.rows.length < JE_SEITE) break;
+      }
+      await sql`CLOSE monat_anfragen`.execute(trx);
 
       await trx.deleteFrom('issue_aggregat').where('monat', '=', g.von).execute();
       const zeilen = [...gruppen.values()].map((gr) => ({
