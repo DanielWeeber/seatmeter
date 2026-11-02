@@ -1,6 +1,6 @@
 // Kleine Bausteine: Seitenkopf, Monatswahl, Kennzahl-Kachel, Tabellen.
 import type { ReactNode } from 'react';
-import type { PersonenHinweis } from '../api/typen';
+import { MINDESTGRUPPE_STANDARD, type PersonenHinweis } from '../api/typen';
 import { aktuellerMonat, monatsname, useMonat, verschiebeMonat } from '../monat';
 
 export function Seitenkopf({ titel, children }: { titel: string; children?: ReactNode }) {
@@ -166,12 +166,15 @@ export function Werte({ eintraege }: { eintraege: [string, ReactNode][] }) {
 }
 
 /** Text zum `personen_hinweis` der API (Personenwerte fehlen, Architektur §7). */
-export function personenHinweisText(hinweis: PersonenHinweis | null): string {
+export function personenHinweisText(
+  hinweis: PersonenHinweis | null,
+  mindestgruppe: number = MINDESTGRUPPE_STANDARD,
+): string {
   switch (hinweis) {
     case 'Auswertungsstufe 0':
       return 'Personen werden in diesem Mandanten nicht ausgewertet (Auswertungsstufe 0).';
     case 'zu wenige Personen':
-      return 'Zu wenige Personen für eine Auswertung – erst ab drei Personen sichtbar (Schutz vor Rückschlüssen).';
+      return `Zu wenige Personen für eine Auswertung – erst ab ${mindestgruppe} Personen sichtbar (Schutz vor Rückschlüssen).`;
     case 'Rolle ohne Personensicht':
       return 'Ihre Rolle sieht keine Personenwerte.';
     default:

@@ -355,6 +355,49 @@ describe('Tagesaggregat und Dashboard-Lesezugriffe', () => {
     expect(r.json()).toMatchObject({ personen: null, personen_hinweis: 'zu wenige Personen' });
   });
 
+  it('Mindestgruppe je Mandant: 1 zeigt eine einzelne Person, höhere Werte verstecken mehr, Stufe 0 und 2 unverändert', async () => {
+    const setze = (werte: { mindestgruppe?: number; auswertungsstufe?: number }) =>
+      db.updateTable('mandant').set(werte).where('id', '=', a).execute();
+    try {
+      // Standard 3: Projekt x (eine Person) versteckt, Projekt y (drei Personen) sichtbar.
+      const standard = (await hole(admin, `/api/v1/projekte/${x}?monat=${monat}`)).json();
+      expect(standard).toMatchObject({ mindestgruppe: 3, personen_hinweis: 'zu wenige Personen' });
+
+      await setze({ mindestgruppe: 1 });
+      const eins = (await hole(admin, `/api/v1/projekte/${x}?monat=${monat}`)).json();
+      expect(eins).toMatchObject({ mindestgruppe: 1, personen_hinweis: null });
+      expect(eins.personen).toHaveLength(1);
+      expect(eins.projekt.personen).toBe(1);
+      const liste = (await hole(admin, `/api/v1/projekte?monat=${monat}`)).json();
+      expect(liste.mindestgruppe).toBe(1);
+      expect(liste.projekte.find((z: { id: string | null }) => z.id === x)).toMatchObject({
+        personen: 1,
+        personen_hinweis: null,
+      });
+      expect((await hole(admin, `/api/v1/personen?monat=${monat}`)).json()).toMatchObject({
+        mindestgruppe: 1,
+        personen_hinweis: null,
+      });
+
+      // Wert 4: auch das Projekt mit drei Personen ist versteckt.
+      await setze({ mindestgruppe: 4 });
+      const vier = (await hole(admin, `/api/v1/projekte/${y}?monat=${monat}`)).json();
+      expect(vier).toMatchObject({ mindestgruppe: 4, personen: null });
+      expect(vier.personen_hinweis).toBe('zu wenige Personen');
+
+      // Stufe 0 und 2 ignorieren die Mindestgruppe wie bisher.
+      await setze({ mindestgruppe: 1, auswertungsstufe: 0 });
+      const stufe0 = (await hole(admin, `/api/v1/projekte/${x}?monat=${monat}`)).json();
+      expect(stufe0).toMatchObject({ personen: null, personen_hinweis: 'Auswertungsstufe 0' });
+      await setze({ mindestgruppe: 10, auswertungsstufe: 2 });
+      const stufe2 = (await hole(admin, `/api/v1/projekte/${x}?monat=${monat}`)).json();
+      expect(stufe2.personen_hinweis).toBeNull();
+      expect(stufe2.personen).toHaveLength(1);
+    } finally {
+      await setze({ mindestgruppe: 3, auswertungsstufe: 1 });
+    }
+  });
+
   it('Datenqualität: unzugeordnet, Modelle ohne Preis, Ingest, Kontrollsumme', async () => {
     const r = await hole(admin, `/api/v1/datenqualitaet?monat=${monat}`);
     expect(r.statusCode).toBe(200);

@@ -7,6 +7,7 @@ import { useMandant, useMandantEinstellungen } from '../api/abfragen';
 import { ApiFehler, useApi } from '../api/client';
 import {
   CACHE_WRITE_ANNAHMEN,
+  MINDESTGRUPPE_STANDARD,
   mandantEinstellungenSchema,
   SITZKOSTEN_VERTEILUNGEN,
   WAEHRUNGEN,
@@ -97,6 +98,7 @@ function EinstellungenLesend({ e }: { e: MandantEinstellungen }) {
     <Werte
       eintraege={[
         ['Auswertungsstufe', STUFEN_TEXT[e.auswertungsstufe] ?? String(e.auswertungsstufe)],
+        ['Mindestgruppe (nur Stufe 1)', `${zahl(e.mindestgruppe)} Personen`],
         ['Klarnamen', e.klarnamen_aktiv ? 'aktiv' : 'aus'],
         ['Zeitzone', e.zeitzone],
         ['Währung', e.waehrung],
@@ -120,6 +122,7 @@ interface FormWerte {
   schatten_faktor: string;
   cache_write_annahme: string;
   auswertungsstufe: string;
+  mindestgruppe: string;
   klarnamen_aktiv: boolean;
 }
 
@@ -132,6 +135,7 @@ function formAus(e: MandantEinstellungen): FormWerte {
     schatten_faktor: alsEingabe(e.schatten_faktor),
     cache_write_annahme: e.cache_write_annahme,
     auswertungsstufe: String(e.auswertungsstufe),
+    mindestgruppe: String(e.mindestgruppe),
     klarnamen_aktiv: e.klarnamen_aktiv,
   };
 }
@@ -193,6 +197,7 @@ function EinstellungenFormular({ daten }: { daten: MandantEinstellungen }) {
       schatten_faktor: alsZahl(f.schatten_faktor),
       cache_write_annahme: f.cache_write_annahme,
       auswertungsstufe: Number(f.auswertungsstufe),
+      mindestgruppe: alsZahl(f.mindestgruppe),
       klarnamen_aktiv: f.klarnamen_aktiv,
     });
     if (!ergebnis.success) {
@@ -274,11 +279,26 @@ function EinstellungenFormular({ daten }: { daten: MandantEinstellungen }) {
         optionen={[0, 1, 2, 3].map((s) => [String(s), STUFEN_TEXT[s] ?? String(s)] as const)}
         fehler={feldFehler.auswertungsstufe}
       />
+      <Eingabe
+        beschriftung="Mindestgruppe (1 bis 10)"
+        wert={f.mindestgruppe}
+        typ="number"
+        onAendern={(w) => setze('mindestgruppe', w)}
+        hilfe="Gilt nur in Auswertungsstufe 1: Pseudonyme erscheinen erst, wenn mindestens so viele Personen im Projekt stehen. Niedrigere Werte machen einzelne Personen leichter erkennbar. Wert mit dem Betriebsrat abstimmen."
+        fehler={feldFehler.mindestgruppe}
+      />
       <Kontrollkaestchen
         beschriftung="Klarnamen aktiv"
         wert={f.klarnamen_aktiv}
         onAendern={(w) => setze('klarnamen_aktiv', w)}
       />
+      {alsZahl(f.mindestgruppe) < MINDESTGRUPPE_STANDARD && (
+        <p role="alert" className="text-sm text-amber-900 sm:col-span-2 lg:col-span-4">
+          Achtung: Eine Mindestgruppe unter 3 macht einzelne Personen in der Projektsicht erkennbar.
+          Nur mit Betriebsvereinbarung bzw. Zustimmung des Betriebsrats einstellen; die Änderung
+          wird protokolliert und erscheint im Betriebsrats-Bericht.
+        </p>
+      )}
       {heikel && (
         <p className="text-sm text-amber-900 sm:col-span-2 lg:col-span-4">
           Klarnamen und Stufe 3 nur mit Betriebsvereinbarung bzw. Zustimmung des Betriebsrats; die

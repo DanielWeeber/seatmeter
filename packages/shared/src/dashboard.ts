@@ -263,7 +263,7 @@ export interface AbdeckungQuellen {
 }
 
 /**
- * Hinweis statt Personenwerten (Auswertungsstufe, Mindestgruppe k = 3, Rolle). Linie für fehlende
+ * Hinweis statt Personenwerten (Auswertungsstufe, Mindestgruppe k je Mandant, Standard 3, Rolle). Linie für fehlende
  * Personensicht: Ist die ganze Ressource personenbezogen (`/api/v1/personen`), antwortet der Server
  * mit 403 `{ code: 'rolle_fehlt' }`; eingebettete Personenfelder einer erlaubten Ressource
  * (`/api/v1/projekte/:id`) kommen als `personen: null` mit `personen_hinweis`.
@@ -290,6 +290,8 @@ export type ProjektZeile = z.infer<typeof projektZeileSchema>;
 export const projekteAntwortSchema = z.object({
   monat: monatSchema,
   auswertungsstufe: z.number(),
+  /** Mindestgruppe des Mandanten (für den Hinweistext). */
+  mindestgruppe: z.number(),
   projekte: z.array(projektZeileSchema),
 });
 export type ProjekteAntwort = z.infer<typeof projekteAntwortSchema>;
@@ -309,6 +311,7 @@ export interface ProjektDetail extends Kennzahlen {
   nach_modell: ModellZeile[];
   nach_tag: TagZeile[];
   auswertungsstufe: number;
+  mindestgruppe: number;
   personen: PersonZeile[] | null;
   personen_hinweis: PersonenHinweis | null;
 }
@@ -316,6 +319,7 @@ export interface ProjektDetail extends Kennzahlen {
 export interface PersonenAntwort {
   monat: string;
   auswertungsstufe: number;
+  mindestgruppe: number;
   klarnamen_aktiv: boolean;
   personen: PersonZeile[] | null;
   personen_hinweis: PersonenHinweis | null;
@@ -438,6 +442,9 @@ const ratenlimit = z
   .max(1_000_000, 'Ratenlimit höchstens 1.000.000 Anfragen pro Minute')
   .nullable();
 
+/** Standard der Mindestgruppe je Ausweis in Auswertungsstufe 1; je Mandant einstellbar 1 bis 10 (Architektur §7). */
+export const MINDESTGRUPPE_STANDARD = 3;
+
 /** Einstellungen des Mandanten (Tabelle `mandant`), lesbar für alle, änderbar nur vom Admin. */
 export const mandantEinstellungenSchema = z.strictObject({
   zeitzone: z
@@ -461,6 +468,11 @@ export const mandantEinstellungenSchema = z.strictObject({
     .int({ error: 'Auswertungsstufe 0 bis 3' })
     .min(0, 'Auswertungsstufe 0 bis 3')
     .max(3, 'Auswertungsstufe 0 bis 3'),
+  /** Mindestgruppe je Ausweis in Auswertungsstufe 1 (1 bis 10, Standard 3). */
+  mindestgruppe: z
+    .int({ error: 'Mindestgruppe 1 bis 10' })
+    .min(1, 'Mindestgruppe 1 bis 10')
+    .max(10, 'Mindestgruppe 1 bis 10'),
   klarnamen_aktiv: z.boolean({ error: 'Klarnamen: ja oder nein' }),
   /**
    * Ratenlimit des Ingest je Token auf `/otlp/v1/*` bzw. je Rechner auf `/api/ingest/v1/*` und

@@ -324,6 +324,50 @@ describe('Kalkulation, Monatsabschluss, Kurs und Berichte', () => {
         schatten_faktor: 1,
       });
     });
+
+    it('Mindestgruppe: Standard 3, nur 1 bis 10, Audit, Betriebsrats-Bericht zeigt den Wert', async () => {
+      const standard = await get(controller, '/api/v1/mandant/einstellungen');
+      expect(standard.json()).toMatchObject({ mindestgruppe: 3 });
+      expect(
+        (await put(controller, '/api/v1/mandant/einstellungen', { mindestgruppe: 1 })).statusCode,
+      ).toBe(403);
+      for (const ungueltig of [0, 11, 2.5, '3']) {
+        const r = await put(admin, '/api/v1/mandant/einstellungen', { mindestgruppe: ungueltig });
+        expect(r.statusCode, String(ungueltig)).toBe(400);
+        expect((r.json() as { details: { message: string }[] }).details[0]?.message).toBe(
+          'Mindestgruppe 1 bis 10',
+        );
+      }
+      expect((await get(controller, '/api/v1/mandant/einstellungen')).json().mindestgruppe).toBe(3);
+
+      const ok = await put(admin, '/api/v1/mandant/einstellungen', { mindestgruppe: 1 });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toMatchObject({ mindestgruppe: 1 });
+      const audit = await db
+        .selectFrom('audit')
+        .select('objekt')
+        .where('mandant_id', '=', a)
+        .where('aktion', '=', 'Einstellung geändert')
+        .execute();
+      expect(audit.map((z) => z.objekt)).toContain('mandant.mindestgruppe: 3 → 1');
+
+      const jetzt = heuteIn('Europe/Berlin').slice(0, 7);
+      const r = await get(betriebsrat, `/api/v1/berichte/betriebsrat?monat=${jetzt}&format=json`);
+      const bericht = betriebsratBerichtSchema.parse(r.json());
+      expect(bericht.konfiguration.mindestgruppe).toBe(1);
+      expect(bericht.konfiguration.auswertungsstufe_text).toBe(
+        '1 – Pseudonym, Monatssummen, Mindestgruppe 1',
+      );
+      expect(bericht.konfiguration.aenderungen.map((e) => e.objekt)).toContain(
+        'mandant.mindestgruppe: 3 → 1',
+      );
+      const csvText = (
+        await get(betriebsrat, `/api/v1/berichte/betriebsrat?monat=${jetzt}&format=csv`)
+      ).body;
+      expect(csvText).toContain('Konfiguration;Mindestgruppe je Ausweis;1');
+
+      await put(admin, '/api/v1/mandant/einstellungen', { mindestgruppe: 3 });
+    });
   });
 
   describe('Berichte', () => {
@@ -488,6 +532,7 @@ describe('Kalkulation, Monatsabschluss, Kurs und Berichte', () => {
       const bericht = betriebsratBerichtSchema.parse(r.json());
       expect(bericht.konfiguration).toMatchObject({
         auswertungsstufe: 1,
+        auswertungsstufe_text: '1 – Pseudonym, Monatssummen, Mindestgruppe 3',
         klarnamen_aktiv: false,
         mindestgruppe: 3,
       });

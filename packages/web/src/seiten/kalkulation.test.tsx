@@ -285,11 +285,36 @@ describe('Einstellungen: Kalkulation und Datenschutz', () => {
     expect(within(f).getByText(/nur mit Betriebsvereinbarung/)).toBeTruthy();
   });
 
+  it('sendet die Mindestgruppe, zeigt Hilfetext und warnt unter 3', async () => {
+    const { aufrufe } = rendereApp('/einstellungen', {
+      ...routen,
+      'PUT /api/v1/mandant/einstellungen': json({ ...MANDANT_EINSTELLUNGEN, mindestgruppe: 1 }),
+    });
+    const f = await formular();
+    expect(within(f).getByText(/Gilt nur in Auswertungsstufe 1/)).toBeTruthy();
+    expect(within(f).queryByText(/Eine Mindestgruppe unter 3/)).toBeNull();
+    feld(f, 'Mindestgruppe (1 bis 10)', '1');
+    expect(within(f).getByText(/Eine Mindestgruppe unter 3/)).toBeTruthy();
+    fireEvent.click(within(f).getByRole('button', { name: 'Speichern' }));
+    expect(await within(f).findByText('Gespeichert.')).toBeTruthy();
+    expect(aufrufe.find((a) => a.methode === 'PUT')?.body).toEqual({ mindestgruppe: 1 });
+  });
+
+  it('prüft die Mindestgruppe (1 bis 10) ohne Anfrage', async () => {
+    const { aufrufe } = rendereApp('/einstellungen', routen);
+    const f = await formular();
+    feld(f, 'Mindestgruppe (1 bis 10)', '11');
+    fireEvent.click(within(f).getByRole('button', { name: 'Speichern' }));
+    expect(await within(f).findByText('Mindestgruppe 1 bis 10')).toBeTruthy();
+    expect(aufrufe.some((a) => a.methode === 'PUT')).toBe(false);
+  });
+
   it('ist für Nicht-Admins nur lesend', async () => {
     rendereApp('/einstellungen', { ...routen, '/api/v1/auth/me': json(ME_LESER) });
     expect(await screen.findByText('1 – Pseudonym, Monat')).toBeTruthy();
     expect(screen.getByText('nach Nutzungsanteil je Person')).toBeTruthy();
     expect(screen.getByText('100 %')).toBeTruthy();
+    expect(screen.getByText('3 Personen')).toBeTruthy();
     expect(screen.queryByRole('form', { name: 'Einstellungen ändern' })).toBeNull();
   });
 });

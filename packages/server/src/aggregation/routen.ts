@@ -29,13 +29,12 @@ import { heuteIn, monatsGrenzen } from './tage.js';
 
 type Trx = Transaction<Datenbank>;
 
-/** Mindestgruppe je Ausweis in Auswertungsstufe 1 (Architektur §7). */
-export const MINDESTGRUPPE = 3;
 export const UNZUGEORDNET_NAME = 'unzugeordnet';
 
 interface MandantSicht {
   zeitzone: string;
   auswertungsstufe: number;
+  mindestgruppe: number;
   klarnamen_aktiv: boolean;
 }
 
@@ -102,16 +101,20 @@ function personenErlaubt(a: AnmeldungMitMandant): boolean {
   return a.rollen.includes('mandanten_admin') || a.rollen.includes('projektleiter');
 }
 
-function personenHinweis(stufe: number, anzahl: number): PersonenHinweis | null {
+function personenHinweis(
+  stufe: number,
+  anzahl: number,
+  mindestgruppe: number,
+): PersonenHinweis | null {
   if (stufe <= 0) return 'Auswertungsstufe 0';
-  if (stufe === 1 && anzahl < MINDESTGRUPPE) return 'zu wenige Personen';
+  if (stufe === 1 && anzahl < mindestgruppe) return 'zu wenige Personen';
   return null;
 }
 
 async function mandantSicht(trx: Trx): Promise<MandantSicht> {
   return trx
     .selectFrom('mandant')
-    .select(['zeitzone', 'auswertungsstufe', 'klarnamen_aktiv'])
+    .select(['zeitzone', 'auswertungsstufe', 'mindestgruppe', 'klarnamen_aktiv'])
     .executeTakeFirstOrThrow();
 }
 
@@ -321,7 +324,7 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
         const p = z.projekt_id ? info.get(z.projekt_id) : undefined;
         const k = z.projekt_id ? katalog.get(z.projekt_id) : undefined;
         const anzahl = Number(z.personen);
-        const hinweis = personenHinweis(sicht.auswertungsstufe, anzahl);
+        const hinweis = personenHinweis(sicht.auswertungsstufe, anzahl, sicht.mindestgruppe);
         return {
           id: z.projekt_id,
           name: k?.name ?? (p ? projektName(p) : UNZUGEORDNET_NAME),
@@ -332,7 +335,12 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
           ...kennzahlen(z),
         };
       });
-      return { monat: b.monat, auswertungsstufe: sicht.auswertungsstufe, projekte: liste };
+      return {
+        monat: b.monat,
+        auswertungsstufe: sicht.auswertungsstufe,
+        mindestgruppe: sicht.mindestgruppe,
+        projekte: liste,
+      };
     });
   });
 
@@ -368,7 +376,11 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
         SELECT count(DISTINCT person_id) AS personen, ${SUMMEN_SQL}
         FROM tag_aggregat WHERE ${imMonat(b)} AND ${filter}`.execute(trx);
         const anzahl = Number(summe.rows[0]?.personen ?? 0);
-        let hinweis: PersonenHinweis | null = personenHinweis(sicht.auswertungsstufe, anzahl);
+        let hinweis: PersonenHinweis | null = personenHinweis(
+          sicht.auswertungsstufe,
+          anzahl,
+          sicht.mindestgruppe,
+        );
         let personen: PersonZeile[] | null = null;
         if (!hinweis && !personenErlaubt(a)) hinweis = 'Rolle ohne Personensicht';
         if (!hinweis) {
@@ -395,6 +407,7 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
           nach_modell: await nachModell(trx, b, filter),
           nach_tag: await nachTag(trx, b, filter),
           auswertungsstufe: sicht.auswertungsstufe,
+          mindestgruppe: sicht.mindestgruppe,
           personen,
           personen_hinweis: hinweis,
         };
@@ -419,10 +432,15 @@ export function dashboardRouten(app: FastifyInstance, ctx: PluginKontext): void 
       const n = await sql<{ n: number }>`
         SELECT count(DISTINCT person_id) AS n FROM tag_aggregat t
         WHERE ${imMonat(b)} AND ${filter}`.execute(trx);
-      const hinweis = personenHinweis(sicht.auswertungsstufe, Number(n.rows[0]?.n ?? 0));
+      const hinweis = personenHinweis(
+        sicht.auswertungsstufe,
+        Number(n.rows[0]?.n ?? 0),
+        sicht.mindestgruppe,
+      );
       const basis = {
         monat: b.monat,
         auswertungsstufe: sicht.auswertungsstufe,
+        mindestgruppe: sicht.mindestgruppe,
         klarnamen_aktiv: sicht.klarnamen_aktiv,
       };
       if (hinweis) return { ...basis, personen: null, personen_hinweis: hinweis };

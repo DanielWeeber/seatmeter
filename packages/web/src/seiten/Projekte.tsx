@@ -16,11 +16,11 @@ export function projektPfadId(p: { id: string | null }): string {
   return p.id ?? UNZUGEORDNET;
 }
 
-function Personenzahl({ p }: { p: ProjektZeile }) {
+function Personenzahl({ p, mindestgruppe }: { p: ProjektZeile; mindestgruppe: number }) {
   if (p.personen != null) return <>{zahl(p.personen)}</>;
   if (!p.personen_hinweis) return <>{LEER}</>;
   return (
-    <span className="text-slate-500" title={personenHinweisText(p.personen_hinweis)}>
+    <span className="text-slate-500" title={personenHinweisText(p.personen_hinweis, mindestgruppe)}>
       {p.personen_hinweis === 'zu wenige Personen' ? 'zu wenige' : LEER}
     </span>
   );
@@ -61,7 +61,9 @@ export function Projekte() {
                   ? [
                       {
                         titel: 'Personen',
-                        wert: (p: ProjektZeile) => <Personenzahl p={p} />,
+                        wert: (p: ProjektZeile) => (
+                          <Personenzahl p={p} mindestgruppe={d.mindestgruppe} />
+                        ),
                         zahl: true,
                       },
                     ]

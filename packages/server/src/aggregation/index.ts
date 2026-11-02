@@ -19,7 +19,7 @@ import { plusTage } from './tage.js';
 
 export * from './job.js';
 export * from './nah.js';
-export { dashboardRouten, MINDESTGRUPPE } from './routen.js';
+export { dashboardRouten } from './routen.js';
 
 /** Höchstens so viele Tage je Neuaufbau auf Anforderung. */
 const MAX_TAGE_ANFORDERUNG = 400;

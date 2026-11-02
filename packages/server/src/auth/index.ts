@@ -310,6 +310,7 @@ export const authPlugin: SeatmeterPlugin = {
             'plan',
             'abrechnungsmodell',
             'auswertungsstufe',
+            'mindestgruppe',
             'klarnamen_aktiv',
             'zeitzone',
             'waehrung',

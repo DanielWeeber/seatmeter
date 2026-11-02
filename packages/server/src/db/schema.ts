@@ -21,6 +21,7 @@ export interface MandantTabelle {
   plan: Generated<'team' | 'enterprise' | 'max_pilot'>;
   abrechnungsmodell: Generated<'kontingent' | 'nutzungsbasiert'>;
   auswertungsstufe: Generated<number>;
+  mindestgruppe: Generated<number>;
   klarnamen_aktiv: Generated<boolean>;
   zeitzone: Generated<string>;
   waehrung: Generated<string>;

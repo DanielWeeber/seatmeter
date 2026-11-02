@@ -176,6 +176,7 @@ export const PROJEKT_UNZUGEORDNET = {
 export const PROJEKTE = {
   monat: MONAT,
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   projekte: [PROJEKT_X_SHOP, PROJEKT_UNZUGEORDNET],
 } satisfies ProjekteAntwort;
 
@@ -220,6 +221,7 @@ export const PROJEKT_DETAIL = {
   nach_modell: [OPUS],
   nach_tag: TAGE,
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   personen: [PERSON],
   personen_hinweis: null,
 } satisfies ProjektDetail;
@@ -285,6 +287,7 @@ export const PROJEKT_DETAIL_UNZUGEORDNET = {
   ],
   nach_tag: [],
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   personen: null,
   personen_hinweis: 'zu wenige Personen',
 } satisfies ProjektDetail;
@@ -292,6 +295,7 @@ export const PROJEKT_DETAIL_UNZUGEORDNET = {
 export const PERSONEN = {
   monat: MONAT,
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   klarnamen_aktiv: false,
   personen: [PERSON],
   personen_hinweis: null,
@@ -300,6 +304,7 @@ export const PERSONEN = {
 export const PERSONEN_ZU_WENIGE = {
   monat: MONAT,
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   klarnamen_aktiv: false,
   personen: null,
   personen_hinweis: 'zu wenige Personen',
@@ -587,6 +592,7 @@ export const MANDANT_EINSTELLUNGEN = {
   schatten_faktor: 1,
   cache_write_annahme: '1h',
   auswertungsstufe: 1,
+  mindestgruppe: 3,
   klarnamen_aktiv: false,
 } satisfies MandantEinstellungen;
 

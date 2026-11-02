@@ -10,7 +10,7 @@
 //
 // Routen (Beträge in Mikro-USD, ganzzahlig; `monat` = `JJJJ-MM`):
 //   GET  /api/v1/uebersicht?monat=        → Uebersicht
-//   GET  /api/v1/projekte?monat=          → ProjekteAntwort { monat, auswertungsstufe, projekte }
+//   GET  /api/v1/projekte?monat=          → ProjekteAntwort { monat, auswertungsstufe, mindestgruppe, projekte }
 //                                           (403 `code: 'rolle_fehlt'` nur bei /personen; in
 //                                           /projekte/:id stattdessen `personen: null` + Hinweis)
 //   GET  /api/v1/projekte/:id?monat=      → ProjektDetail (`:id` = UUID oder `unzugeordnet`)
@@ -85,6 +85,7 @@ export type {
 export type { RechnerZeile as Rechner } from '@seatmeter/shared';
 export {
   ABRECHNUNGEN,
+  MINDESTGRUPPE_STANDARD,
   ROLLEN,
   SITZ_STANDARDKOSTEN,
   SITZ_TYP_NAMEN,
@@ -216,6 +217,7 @@ export const projektDetailSchema = vertrag<ProjektDetail>()(
     nach_modell: z.array(modellZeileSchema),
     nach_tag: z.array(tagZeileSchema),
     auswertungsstufe: zahl,
+    mindestgruppe: zahl,
     personen: z.array(personZeileSchema).nullable(),
     personen_hinweis: personenHinweisSchema.nullable(),
   }),
@@ -226,6 +228,7 @@ export const personenSchema = vertrag<PersonenAntwort>()(
   z.object({
     monat,
     auswertungsstufe: zahl,
+    mindestgruppe: zahl,
     klarnamen_aktiv: z.boolean(),
     personen: z.array(personZeileSchema).nullable(),
     personen_hinweis: personenHinweisSchema.nullable(),
@@ -320,6 +323,7 @@ export const mandantSchema = z.looseObject({
   slug: textOderNull,
   plan: textOderNull,
   auswertungsstufe: zahlOderNull,
+  mindestgruppe: zahlOderNull,
   klarnamen_aktiv: z
     .boolean()
     .nullish()

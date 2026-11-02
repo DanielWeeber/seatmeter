@@ -3,19 +3,21 @@
 import { ROLLEN, type BetriebsratBericht, type Rolle } from '@seatmeter/shared';
 import { sql, type Transaction } from 'kysely';
 import { AUDIT_AKTION } from '../audit/protokoll.js';
-import { MINDESTGRUPPE } from '../aggregation/routen.js';
 import { monatsGrenzen, plusTage } from '../aggregation/tage.js';
 import type { Datenbank } from '../db/schema.js';
 import { csv, text } from './csv.js';
 
 type Trx = Transaction<Datenbank>;
 
-export const STUFEN_TEXT: Record<number, string> = {
+const STUFEN_TEXT: Record<number, string> = {
   0: '0 – nur Projekte (keine Personensicht)',
-  1: '1 – Pseudonym, Monatssummen, Mindestgruppe 3',
+  1: '1 – Pseudonym, Monatssummen, Mindestgruppe {k}',
   2: '2 – Pseudonym, Tagesverlauf je Projekt',
   3: '3 – Klarnamen (nur nach Aktivierung durch den Mandanten-Admin)',
 };
+
+export const stufenText = (stufe: number, mindestgruppe: number): string =>
+  STUFEN_TEXT[stufe]?.replace('{k}', String(mindestgruppe)) ?? String(stufe);
 
 export const ZWECK =
   'Projektkalkulation und Kostensteuerung der Claude-Code-Nutzung über Abo-Sitze. Ausdrücklich keine ' +
@@ -39,7 +41,7 @@ export const NICHT_ERFASST = [
 
 export const HINWEIS =
   'Einsatz nur auf Grundlage einer Betriebsvereinbarung bzw. Zustimmung des Betriebsrats ' +
-  '(§ 87 Abs. 1 Nr. 6 BetrVG). Änderungen an Auswertungsstufe, Klarnamen oder Aufbewahrungsfristen ' +
+  '(§ 87 Abs. 1 Nr. 6 BetrVG). Änderungen an Auswertungsstufe, Mindestgruppe, Klarnamen oder Aufbewahrungsfristen ' +
   'erscheinen in diesem Bericht. Kein Rechtsrat.';
 
 /** Konfigurationsänderungen, die im Bericht erscheinen (ohne personenbezogene Aktionen wie „Sitz geändert“). */
@@ -153,9 +155,9 @@ export async function erstelleBetriebsratBericht(
     zweck: ZWECK,
     konfiguration: {
       auswertungsstufe: m.auswertungsstufe,
-      auswertungsstufe_text: STUFEN_TEXT[m.auswertungsstufe] ?? String(m.auswertungsstufe),
+      auswertungsstufe_text: stufenText(m.auswertungsstufe, m.mindestgruppe),
       klarnamen_aktiv: m.klarnamen_aktiv,
-      mindestgruppe: MINDESTGRUPPE,
+      mindestgruppe: m.mindestgruppe,
       aufbewahrung: {
         anfrage_tage: m.aufbewahrung_anfrage_tage,
         aggregat_monate: m.aufbewahrung_aggregat_monate,

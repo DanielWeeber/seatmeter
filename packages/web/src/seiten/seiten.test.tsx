@@ -175,10 +175,21 @@ describe('Personen', () => {
     rendereApp(`/personen${q}`, { [`/api/v1/personen${q}`]: json(PERSONEN_ZU_WENIGE) });
     expect(
       await screen.findByText(
-        'Zu wenige Personen für eine Auswertung – erst ab drei Personen sichtbar (Schutz vor Rückschlüssen).',
+        'Zu wenige Personen für eine Auswertung – erst ab 3 Personen sichtbar (Schutz vor Rückschlüssen).',
       ),
     ).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('nennt im Hinweis die Mindestgruppe des Mandanten, nicht fest „drei“', async () => {
+    rendereApp(`/personen${q}`, {
+      [`/api/v1/personen${q}`]: json({ ...PERSONEN_ZU_WENIGE, mindestgruppe: 5 }),
+    });
+    expect(
+      await screen.findByText(
+        'Zu wenige Personen für eine Auswertung – erst ab 5 Personen sichtbar (Schutz vor Rückschlüssen).',
+      ),
+    ).toBeTruthy();
   });
 
   it('zeigt bei 403 rolle_fehlt den Rollen-Hinweis statt eines Fehlers', async () => {

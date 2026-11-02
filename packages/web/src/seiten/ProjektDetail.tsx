@@ -129,7 +129,7 @@ export function ProjektDetail() {
                   <ProjektIssues id={id} monat={monat} />
                   <Abschnitt titel="Personen">
                     {d.personen === null ? (
-                      <Hinweis>{personenHinweisText(d.personen_hinweis)}</Hinweis>
+                      <Hinweis>{personenHinweisText(d.personen_hinweis, d.mindestgruppe)}</Hinweis>
                     ) : d.personen.length === 0 ? (
                       <p className="text-slate-600">Keine Personen in diesem Monat.</p>
                     ) : (

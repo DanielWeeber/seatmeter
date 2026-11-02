@@ -23,6 +23,7 @@ import * as m0028 from './2026_11_01_0028_projektwahl_stufe.js';
 import * as m0029 from './2026_11_01_0029_katalog_push.js';
 import * as m0030 from './2026_11_01_0030_katalog_bremse.js';
 import * as m0031 from './2026_11_01_0031_katalog_abschluss_baum.js';
+import * as m0032 from './2026_11_02_0032_mindestgruppe.js';
 
 export const MIGRATIONEN: Record<string, Migration> = {
   '2026_10_22_0001_grundschema': m0001,
@@ -48,4 +49,5 @@ export const MIGRATIONEN: Record<string, Migration> = {
   '2026_11_01_0029_katalog_push': m0029,
   '2026_11_01_0030_katalog_bremse': m0030,
   '2026_11_01_0031_katalog_abschluss_baum': m0031,
+  '2026_11_02_0032_mindestgruppe': m0032,
 };

@@ -25,7 +25,7 @@ export function Personen() {
         <Abfrage abfrage={abfrage} istLeer={(d) => d.personen !== null && d.personen.length === 0}>
           {(d) =>
             d.personen === null ? (
-              <Hinweis>{personenHinweisText(d.personen_hinweis)}</Hinweis>
+              <Hinweis>{personenHinweisText(d.personen_hinweis, d.mindestgruppe)}</Hinweis>
             ) : (
               <div className="mt-6">
                 <Tabelle

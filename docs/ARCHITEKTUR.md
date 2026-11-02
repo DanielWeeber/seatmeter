@@ -272,7 +272,7 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 | Stufe | Personensicht |
 |---|---|
 | 0 „nur Projekte“ | keine; Personen dienen nur der Sitzkostenverteilung |
-| 1 „Pseudonym, Monat“ (Standard) | Pseudonyme nur als Monatssummen, Mindestgruppe k = 3 je Ausweis |
+| 1 „Pseudonym, Monat“ (Standard) | Pseudonyme nur als Monatssummen, Mindestgruppe k je Ausweis (Standard 3, je Mandant einstellbar 1–10; nur auf dieser Stufe wirksam) |
 | 2 „Pseudonym, Tag“ | Tagesverlauf je Pseudonym und Projekt |
 | 3 „Klarnamen“ | nur nach Aktivierung durch den Mandanten-Admin mit Verweis auf die Betriebsvereinbarung, protokolliert |
 
@@ -281,7 +281,7 @@ Jeder Löschlauf wird protokolliert und erscheint im Betriebsrats-Bericht.
 - Hosting in Deutschland (eigener Server, später EU-Hoster). TLS bis Caddy. Backups verschlüsselt. Master-Schlüssel getrennt von den Backups.
 
 **Betriebsrats-Bericht** (HTML/PDF und CSV, Zeitraum wählbar):
-1. Konfiguration: Auswertungsstufe, Klarnamen an/aus, Aufbewahrungsfristen, aktive Quellen, Änderungen im Zeitraum (wer, wann).
+1. Konfiguration: Auswertungsstufe, Mindestgruppe, Klarnamen an/aus, Aufbewahrungsfristen, aktive Quellen, Änderungen im Zeitraum (wer, wann).
 2. Erfasste Datenkategorien und ausdrücklich nicht erfasste (Inhalte, Prompts, Dateinamen, Uhrzeiten je Person).
 3. Zugriffe: Konten mit Rollen; Protokoll, wer wann Personensichten geöffnet oder exportiert hat.
 4. Mengen: Anzahl erfasster Personen und Rechner; Nutzung je Projekt ohne Personenbezug.

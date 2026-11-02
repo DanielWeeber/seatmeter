@@ -20,6 +20,7 @@ export function Eingabe({
   dezimal,
   fehler,
   deaktiviert,
+  hilfe,
 }: {
   beschriftung: string;
   wert: string;
@@ -28,23 +29,34 @@ export function Eingabe({
   dezimal?: boolean;
   fehler?: string | null;
   deaktiviert?: boolean;
+  /** Kurzer Erklärungstext unter dem Feld. */
+  hilfe?: string;
 }) {
   const fehlerId = useId();
+  const hilfeId = useId();
+  const beschrieben = [fehler ? fehlerId : null, hilfe ? hilfeId : null].filter(Boolean).join(' ');
   return (
-    <label className="block text-sm">
-      <span className="block font-medium text-slate-700">{beschriftung}</span>
-      <input
-        type={typ}
-        value={wert}
-        inputMode={dezimal ? 'decimal' : undefined}
-        onChange={(e) => onAendern(e.target.value)}
-        disabled={deaktiviert}
-        aria-invalid={fehler ? true : undefined}
-        aria-describedby={fehler ? fehlerId : undefined}
-        className={`mt-1 w-full rounded border px-2 py-1 ${fehler ? 'border-red-400' : 'border-slate-300'}`}
-      />
-      <FeldFehler id={fehlerId} fehler={fehler} />
-    </label>
+    <div className="text-sm">
+      <label className="block">
+        <span className="block font-medium text-slate-700">{beschriftung}</span>
+        <input
+          type={typ}
+          value={wert}
+          inputMode={dezimal ? 'decimal' : undefined}
+          onChange={(e) => onAendern(e.target.value)}
+          disabled={deaktiviert}
+          aria-invalid={fehler ? true : undefined}
+          aria-describedby={beschrieben || undefined}
+          className={`mt-1 w-full rounded border px-2 py-1 ${fehler ? 'border-red-400' : 'border-slate-300'}`}
+        />
+        <FeldFehler id={fehlerId} fehler={fehler} />
+      </label>
+      {hilfe && (
+        <p id={hilfeId} className="mt-1 text-xs text-slate-500">
+          {hilfe}
+        </p>
+      )}
+    </div>
   );
 }
 
